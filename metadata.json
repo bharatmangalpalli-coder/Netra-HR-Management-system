@@ -1,0 +1,8 @@
+{
+  "name": "HR Pro - Small Office Management System",
+  "description": "A comprehensive HR management system featuring an Admin Dashboard for office management and a mobile-responsive Employee Portal for attendance, tasks, and leave requests.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ]
+}
