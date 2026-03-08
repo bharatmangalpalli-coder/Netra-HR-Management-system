@@ -32,6 +32,8 @@ export default function EmployeeManagement() {
     address: '',
     aadhaar: '',
     joiningDate: new Date().toISOString().split('T')[0],
+    exitDate: '',
+    designation: '',
     monthlySalary: 0,
     role: 'EMPLOYEE' as any
   });
@@ -72,6 +74,8 @@ export default function EmployeeManagement() {
         address: formData.address,
         aadhaar: formData.aadhaar,
         joiningDate: formData.joiningDate,
+        exitDate: formData.exitDate || null,
+        designation: formData.designation,
         monthlySalary: formData.monthlySalary,
         role: formData.role,
         status: 'active',
@@ -85,7 +89,7 @@ export default function EmployeeManagement() {
       fetchEmployees();
       setFormData({
         name: '', email: '', password: 'password123', mobile: '', address: '', aadhaar: '',
-        joiningDate: new Date().toISOString().split('T')[0], monthlySalary: 0, role: 'EMPLOYEE'
+        joiningDate: new Date().toISOString().split('T')[0], exitDate: '', designation: '', monthlySalary: 0, role: 'EMPLOYEE'
       });
     } catch (error: any) {
       toast.error(error.message || 'Failed to add employee');
@@ -146,6 +150,7 @@ export default function EmployeeManagement() {
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4 font-semibold">Employee</th>
+                <th className="px-6 py-4 font-semibold">Designation</th>
                 <th className="px-6 py-4 font-semibold">Contact</th>
                 <th className="px-6 py-4 font-semibold">Joining Date</th>
                 <th className="px-6 py-4 font-semibold">Salary</th>
@@ -177,10 +182,16 @@ export default function EmployeeManagement() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
+                      <p className="text-sm text-slate-600">{emp.designation || 'N/A'}</p>
+                    </td>
+                    <td className="px-6 py-4">
                       <p className="text-sm text-slate-600">{emp.mobile}</p>
                       <p className="text-xs text-slate-400">Aadhaar: {emp.aadhaar}</p>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{emp.joiningDate}</td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-600">{emp.joiningDate}</p>
+                      {emp.exitDate && <p className="text-[10px] text-red-500 font-medium">Exit: {emp.exitDate}</p>}
+                    </td>
                     <td className="px-6 py-4 text-sm font-medium text-slate-800">{formatCurrency(emp.monthlySalary)}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -272,6 +283,16 @@ export default function EmployeeManagement() {
                   />
                 </div>
                 <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700">Designation</label>
+                  <input 
+                    type="text" 
+                    value={formData.designation}
+                    onChange={(e) => setFormData({...formData, designation: e.target.value})}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="Software Engineer"
+                  />
+                </div>
+                <div className="space-y-1">
                   <label className="text-sm font-medium text-slate-700">Monthly Salary (INR)</label>
                   <input 
                     required
@@ -289,6 +310,15 @@ export default function EmployeeManagement() {
                     type="date" 
                     value={formData.joiningDate}
                     onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700">Exit Date (Optional)</label>
+                  <input 
+                    type="date" 
+                    value={formData.exitDate}
+                    onChange={(e) => setFormData({...formData, exitDate: e.target.value})}
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>

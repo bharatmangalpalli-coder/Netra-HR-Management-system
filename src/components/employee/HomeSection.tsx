@@ -73,7 +73,8 @@ export default function HomeSection({ employee, onNavigate }: Props) {
       <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
         <div className="relative z-10">
           <h1 className="text-2xl font-bold">Hello, {employee.name.split(' ')[0]}!</h1>
-          <p className="text-blue-100 text-sm mt-1">Have a productive day at work.</p>
+          <p className="text-blue-100 text-sm mt-1">{employee.designation || 'Team Member'}</p>
+          <p className="text-blue-100/60 text-[10px] mt-0.5">Have a productive day at work.</p>
           
           <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">

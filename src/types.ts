@@ -8,6 +8,8 @@ export interface Employee {
   address?: string;
   aadhaar?: string;
   joiningDate: string;
+  exitDate?: string;
+  designation?: string;
   monthlySalary: number;
   role: UserRole;
   status: 'active' | 'inactive';
