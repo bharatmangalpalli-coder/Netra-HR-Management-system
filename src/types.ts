@@ -4,9 +4,9 @@ export interface Employee {
   id: string;
   employeeId: string;
   name: string;
-  mobile: string;
-  address: string;
-  aadhaar: string;
+  mobile?: string;
+  address?: string;
+  aadhaar?: string;
   joiningDate: string;
   monthlySalary: number;
   role: UserRole;

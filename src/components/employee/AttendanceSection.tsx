@@ -2,17 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { 
   Clock, 
   MapPin, 
-  Camera, 
+  Camera as CameraIcon, 
   CheckCircle2, 
   AlertCircle,
-  History
+  History,
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { Employee, Attendance } from '../../types';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, limit, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { getTodayDate } from '../../lib/utils';
 import toast from 'react-hot-toast';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
   employee: Employee;
@@ -23,13 +25,114 @@ export default function AttendanceSection({ employee }: Props) {
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<Attendance[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  
+  // Camera State
+  const [showCamera, setShowCamera] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     fetchTodayAttendance();
     fetchHistory();
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
   }, [employee.id]);
 
+  useEffect(() => {
+    if (showCamera && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [showCamera, stream]);
+
+  const startCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast.error("Camera access is not supported by your browser or environment.");
+      return;
+    }
+
+    try {
+      setShowCamera(true);
+      setCapturedImage(null);
+      
+      // Small delay to ensure modal is rendered
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      let mediaStream: MediaStream;
+      try {
+        // Try with simple constraints first for better compatibility
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: false 
+        });
+      } catch (e) {
+        console.warn("Simple video: true failed, trying with facingMode", e);
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'user' }, 
+            audio: false 
+          });
+        } catch (e2) {
+          console.warn("facingMode failed, trying with width/height", e2);
+          mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: { ideal: 640 }, height: { ideal: 480 } }, 
+            audio: false 
+          });
+        }
+      }
+      
+      setStream(mediaStream);
+    } catch (error: any) {
+      console.error("Error accessing camera:", error);
+      setShowCamera(false);
+      
+      let errorMsg = "Could not access camera.";
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        errorMsg = "Camera permission denied. Please allow camera access in your browser settings.";
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError' || error.message?.includes('found')) {
+        errorMsg = "No camera found on this device. Please ensure your camera is connected.";
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        errorMsg = "Camera is already in use by another application.";
+      } else {
+        errorMsg = `Camera Error: ${error.message || 'Unknown error'}`;
+      }
+      
+      toast.error(errorMsg);
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setShowCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        setCapturedImage(dataUrl);
+        // Stop stream after capture to save battery/resources
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          setStream(null);
+        }
+      }
+    }
+  };
+
   const fetchTodayAttendance = async () => {
+    setLoading(true);
     try {
       const today = getTodayDate();
       const empId = employee.employeeId || employee.id;
@@ -45,6 +148,8 @@ export default function AttendanceSection({ employee }: Props) {
       }
     } catch (error) {
       console.error("Error fetching today attendance:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -67,12 +172,23 @@ export default function AttendanceSection({ employee }: Props) {
   };
 
   const handleMarkIn = async () => {
+    console.log("handleMarkIn clicked");
+    if (!capturedImage) {
+      return toast.error("Please capture a selfie first");
+    }
+
     setLoading(true);
     try {
+      console.log("Getting location...");
       // Get Location
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject);
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        });
       });
+      console.log("Location obtained:", position.coords);
 
       const now = new Date();
       const inTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -89,11 +205,13 @@ export default function AttendanceSection({ employee }: Props) {
           lng: position.coords.longitude
         },
         status,
-        selfieUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${employee.name}` // Mock selfie
+        selfieUrl: capturedImage
       };
 
       await addDoc(collection(db, 'attendance'), newAttendance);
       toast.success('Attendance marked successfully');
+      setShowCamera(false);
+      setCapturedImage(null);
       fetchTodayAttendance();
     } catch (error: any) {
       toast.error(error.message || 'Failed to mark attendance');
@@ -103,6 +221,7 @@ export default function AttendanceSection({ employee }: Props) {
   };
 
   const handleMarkOut = async () => {
+    console.log("handleMarkOut clicked");
     if (!todayAttendance) return;
     setLoading(true);
     try {
@@ -118,6 +237,7 @@ export default function AttendanceSection({ employee }: Props) {
   };
 
   const handleBreakIn = async () => {
+    console.log("handleBreakIn clicked");
     if (!todayAttendance) return;
     setLoading(true);
     try {
@@ -133,6 +253,7 @@ export default function AttendanceSection({ employee }: Props) {
   };
 
   const handleBreakOut = async () => {
+    console.log("handleBreakOut clicked");
     if (!todayAttendance) return;
     setLoading(true);
     try {
@@ -183,10 +304,11 @@ export default function AttendanceSection({ employee }: Props) {
             <div className="mt-10 space-y-4">
               {!todayAttendance ? (
                 <button 
-                  onClick={handleMarkIn}
+                  onClick={startCamera}
                   disabled={loading}
-                  className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all disabled:opacity-50"
+                  className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
+                  <CameraIcon className="w-6 h-6" />
                   {loading ? 'Processing...' : 'Mark Attendance IN'}
                 </button>
               ) : !todayAttendance.outTime ? (
@@ -263,6 +385,85 @@ export default function AttendanceSection({ employee }: Props) {
           ))}
         </div>
       )}
+
+      {/* Camera Modal */}
+      <AnimatePresence>
+        {showCamera && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-6"
+          >
+            <button 
+              onClick={stopCamera}
+              className="absolute top-6 right-6 p-3 bg-white/10 rounded-full text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="w-full max-w-sm aspect-[3/4] bg-slate-900 rounded-[2.5rem] overflow-hidden relative border-2 border-white/20">
+              {!capturedImage ? (
+                <video 
+                  ref={videoRef}
+                  autoPlay 
+                  playsInline 
+                  muted
+                  className="w-full h-full object-cover scale-x-[-1]"
+                />
+              ) : (
+                <img 
+                  src={capturedImage} 
+                  alt="Captured" 
+                  className="w-full h-full object-cover scale-x-[-1]" 
+                />
+              )}
+              
+              {!capturedImage && (
+                <div className="absolute inset-0 border-[40px] border-black/20 pointer-events-none">
+                  <div className="w-full h-full border-2 border-white/40 rounded-[1.5rem] border-dashed"></div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-12 w-full max-w-sm space-y-4">
+              {!capturedImage ? (
+                <button 
+                  onClick={capturePhoto}
+                  className="w-full py-4 bg-white text-black rounded-3xl font-bold text-lg flex items-center justify-center gap-2"
+                >
+                  <CameraIcon className="w-6 h-6" />
+                  Capture Selfie
+                </button>
+              ) : (
+                <>
+                  <button 
+                    onClick={handleMarkIn}
+                    disabled={loading}
+                    className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-900/40 flex items-center justify-center gap-2"
+                  >
+                    {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <CheckCircle2 className="w-6 h-6" />}
+                    {loading ? 'Marking Attendance...' : 'Confirm & Mark IN'}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setCapturedImage(null);
+                      startCamera();
+                    }}
+                    className="w-full py-4 bg-white/10 text-white rounded-3xl font-bold text-lg"
+                  >
+                    Retake Photo
+                  </button>
+                </>
+              )}
+            </div>
+            
+            <p className="mt-6 text-white/40 text-xs text-center px-8">
+              Position your face within the frame. Your location will be recorded automatically.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

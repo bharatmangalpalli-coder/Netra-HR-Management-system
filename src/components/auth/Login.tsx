@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword, 
   RecaptchaVerifier, 
   signInWithPhoneNumber,
-  ConfirmationResult
+  ConfirmationResult,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { motion } from 'motion/react';
@@ -13,13 +14,17 @@ import toast from 'react-hot-toast';
 import Logo from '../ui/Logo';
 
 export default function Login() {
-  const [method, setMethod] = useState<'phone' | 'email'>('email'); // Default to email for easier demo setup
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [method, setMethod] = useState<'phone' | 'email'>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<'ADMIN' | 'EMPLOYEE'>('ADMIN');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
   const [verificationId, setVerificationId] = useState<ConfirmationResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const recaptchaRef = React.useRef<any>(null);
 
   React.useEffect(() => {
@@ -30,15 +35,44 @@ export default function Login() {
     };
   }, []);
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!auth) return toast.error('Firebase not configured');
+    if (!auth || !db) return toast.error('Firebase not configured');
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      toast.success('Logged in successfully');
+      if (isForgotPassword) {
+        await sendPasswordResetEmail(auth, email);
+        toast.success('Password reset link sent to your email');
+        setIsForgotPassword(false);
+      } else if (isRegistering) {
+        const { createUserWithEmailAndPassword } = await import('firebase/auth');
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        
+        const collectionName = role === 'ADMIN' ? 'admins' : 'employees';
+        const userData: any = {
+          email,
+          role,
+          createdAt: new Date().toISOString(),
+        };
+
+        if (role === 'EMPLOYEE') {
+          userData.name = name;
+          userData.employeeId = `EMP${Math.floor(1000 + Math.random() * 9000)}`;
+          userData.status = 'active';
+          userData.joiningDate = new Date().toISOString().split('T')[0];
+          userData.monthlySalary = 0;
+        } else {
+          userData.name = name;
+        }
+
+        await setDoc(doc(db, collectionName, userCredential.user.uid), userData);
+        toast.success('Account created successfully');
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+        toast.success('Logged in successfully');
+      }
     } catch (error: any) {
-      toast.error(error.message || 'Failed to login');
+      toast.error(error.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -96,121 +130,6 @@ export default function Login() {
     }
   };
 
-  // For demo purposes: Admin Quick Login & Setup
-  const handleAdminQuickLogin = async () => {
-    if (!auth) return toast.error('Firebase not configured');
-    const demoEmail = 'admin@hrpro.com';
-    const demoPassword = 'admin123';
-    
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    
-    setLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, demoEmail, demoPassword);
-      toast.success('Logged in as Admin');
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        toast.error('Demo user not found. Click "Create Demo Admin" first.');
-      } else {
-        toast.error(error.message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateDemoAdmin = async () => {
-    if (!auth || !db) return toast.error('Firebase not configured');
-    const demoEmail = 'admin@hrpro.com';
-    const demoPassword = 'admin123';
-
-    setLoading(true);
-    try {
-      const { createUserWithEmailAndPassword } = await import('firebase/auth');
-      const userCredential = await createUserWithEmailAndPassword(auth, demoEmail, demoPassword);
-      
-      // Create admin document in Firestore
-      await setDoc(doc(db, 'admins', userCredential.user.uid), {
-        email: demoEmail,
-        role: 'ADMIN',
-        createdAt: new Date().toISOString()
-      });
-
-      toast.success('Demo Admin created! Now you can login.');
-      setEmail(demoEmail);
-      setPassword(demoPassword);
-    } catch (error: any) {
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error('Demo account already exists. Just click Login.');
-      } else {
-        toast.error(error.message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateDemoEmployee = async () => {
-    if (!auth || !db) return toast.error('Firebase not configured');
-    const demoEmail = 'employee@hrpro.com';
-    const demoPassword = 'password123';
-
-    setLoading(true);
-    try {
-      const { createUserWithEmailAndPassword } = await import('firebase/auth');
-      const userCredential = await createUserWithEmailAndPassword(auth, demoEmail, demoPassword);
-      
-      // Create employee document in Firestore
-      await setDoc(doc(db, 'employees', userCredential.user.uid), {
-        employeeId: 'EMP001',
-        name: 'Demo Employee',
-        email: demoEmail,
-        role: 'EMPLOYEE',
-        department: 'Engineering',
-        designation: 'Software Engineer',
-        baseSalary: 50000,
-        joinedAt: new Date().toISOString(),
-        status: 'ACTIVE'
-      });
-
-      toast.success('Demo Employee created! Now you can login.');
-      setEmail(demoEmail);
-      setPassword(demoPassword);
-    } catch (error: any) {
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error('Demo account already exists. Just click Login.');
-      } else {
-        toast.error(error.message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleEmployeeQuickLogin = async () => {
-    if (!auth) return toast.error('Firebase not configured');
-    const demoEmail = 'employee@hrpro.com';
-    const demoPassword = 'password123';
-    
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    
-    setLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, demoEmail, demoPassword);
-      toast.success('Logged in as Employee');
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        toast.error('Demo employee not found. Click "Create Demo Employee" first.');
-      } else {
-        toast.error(error.message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div id="recaptcha-container"></div>
@@ -224,28 +143,69 @@ export default function Login() {
           <div className="mb-4 flex justify-center">
             <Logo size="lg" className="shadow-lg shadow-blue-900/20" />
           </div>
-          <h1 className="text-2xl font-bold">Welcome to HR Pro</h1>
-          <p className="text-blue-100 mt-1">Sign in to your workspace</p>
+          <h1 className="text-2xl font-bold">HR Pro</h1>
+          <p className="text-blue-100 mt-1">
+            {isForgotPassword ? 'Reset your password' : isRegistering ? 'Create your account' : 'Sign in to your workspace'}
+          </p>
         </div>
 
         <div className="p-8">
-          <div className="flex bg-slate-100 p-1 rounded-xl mb-8">
-            <button 
-              onClick={() => setMethod('email')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${method === 'email' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}
-            >
-              Email
-            </button>
-            <button 
-              onClick={() => setMethod('phone')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${method === 'phone' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}
-            >
-              Phone OTP
-            </button>
-          </div>
+          {!isRegistering && !isForgotPassword && (
+            <div className="flex bg-slate-100 p-1 rounded-xl mb-8">
+              <button 
+                onClick={() => setMethod('email')}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${method === 'email' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}
+              >
+                Email
+              </button>
+              <button 
+                onClick={() => setMethod('phone')}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${method === 'phone' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}
+              >
+                Phone OTP
+              </button>
+            </div>
+          )}
 
-          {method === 'email' ? (
-            <form onSubmit={handleEmailLogin} className="space-y-4">
+          {method === 'email' || isRegistering ? (
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              {isRegistering && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                      <input 
+                        type="text" 
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        placeholder="John Doe"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">I am an</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRole('ADMIN')}
+                        className={`py-2 rounded-xl text-sm font-bold border transition-all ${role === 'ADMIN' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                      >
+                        Admin
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRole('EMPLOYEE')}
+                        className={`py-2 rounded-xl text-sm font-bold border transition-all ${role === 'EMPLOYEE' ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                      >
+                        Employee
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
                 <div className="relative">
@@ -260,67 +220,60 @@ export default function Login() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                  <input 
-                    type="password" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    placeholder="••••••••"
-                    required
-                  />
+              {!isForgotPassword && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-slate-700">Password</label>
+                    {!isRegistering && (
+                      <button 
+                        type="button"
+                        onClick={() => setIsForgotPassword(true)}
+                        className="text-xs font-medium text-blue-600 hover:underline"
+                      >
+                        Forgot Password?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input 
+                      type="password" 
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="••••••••"
+                      required={!isForgotPassword}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
               <button 
                 type="submit"
                 disabled={loading}
                 className="w-full py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {loading ? 'Signing in...' : 'Sign In'}
+                {loading ? 'Processing...' : isForgotPassword ? 'Send Reset Link' : isRegistering ? 'Create Account' : 'Sign In'}
                 <ArrowRight className="w-4 h-4" />
               </button>
               
-              <div className="pt-4 border-t border-slate-100 space-y-4">
-                <div className="grid grid-cols-2 gap-2">
+              <div className="pt-4 text-center space-y-2">
+                {isForgotPassword ? (
                   <button 
                     type="button"
-                    disabled={loading}
-                    onClick={handleAdminQuickLogin}
-                    className="py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100"
+                    onClick={() => setIsForgotPassword(false)}
+                    className="text-sm font-medium text-blue-600 hover:underline"
                   >
-                    Demo Admin
+                    Back to Sign In
                   </button>
+                ) : (
                   <button 
                     type="button"
-                    disabled={loading}
-                    onClick={handleEmployeeQuickLogin}
-                    className="py-2 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-emerald-100"
+                    onClick={() => setIsRegistering(!isRegistering)}
+                    className="text-sm font-medium text-blue-600 hover:underline block w-full"
                   >
-                    Demo Employee
+                    {isRegistering ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
                   </button>
-                </div>
-                
-                <div className="flex flex-col items-center gap-1">
-                  <button 
-                    type="button"
-                    disabled={loading}
-                    onClick={handleCreateDemoAdmin}
-                    className="text-[10px] text-slate-400 hover:text-blue-500 transition-colors"
-                  >
-                    Setup Admin Account
-                  </button>
-                  <button 
-                    type="button"
-                    disabled={loading}
-                    onClick={handleCreateDemoEmployee}
-                    className="text-[10px] text-slate-400 hover:text-emerald-500 transition-colors"
-                  >
-                    Setup Employee Account
-                  </button>
-                </div>
+                )}
               </div>
             </form>
           ) : (
@@ -371,6 +324,15 @@ export default function Login() {
                   Change Phone Number
                 </button>
               )}
+              <div className="pt-4 text-center">
+                <button 
+                  type="button"
+                  onClick={() => setIsRegistering(true)}
+                  className="text-sm font-medium text-blue-600 hover:underline"
+                >
+                  Don't have an account? Sign Up
+                </button>
+              </div>
             </form>
           )}
         </div>
