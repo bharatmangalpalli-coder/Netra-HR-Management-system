@@ -9,9 +9,10 @@ import {
   TrendingUp,
   AlertCircle,
   Edit2,
+  Trash2,
   X
 } from 'lucide-react';
-import { collection, getDocs, addDoc, query, where, orderBy, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Employee, SalaryRecord } from '../../types';
 import { formatCurrency } from '../../lib/utils';
@@ -25,7 +26,9 @@ export default function SalaryManagement() {
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<SalaryRecord | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({
     bonus: 0,
     incentive: 0,
@@ -208,6 +211,27 @@ export default function SalaryManagement() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    setLoading(true);
+    try {
+      await deleteDoc(doc(db, 'salary', deletingId));
+      toast.success('Salary record deleted');
+      setIsDeleteModalOpen(false);
+      setDeletingId(null);
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to delete record');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmDelete = (id: string) => {
+    setDeletingId(id);
+    setIsDeleteModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Stats */}
@@ -315,6 +339,13 @@ export default function SalaryManagement() {
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button 
+                              onClick={() => confirmDelete(record.id)}
+                              className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
+                              title="Delete Record"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                            <button 
                               onClick={() => generateSalarySlip(emp, record)}
                               className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
                               title="Download Slip"
@@ -332,6 +363,41 @@ export default function SalaryManagement() {
           </table>
         </div>
       </div>
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Record?</h3>
+              <p className="text-slate-500 text-sm mb-8">Are you sure you want to delete this salary record? This action cannot be undone.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 px-6 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="flex-1 px-6 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
+                >
+                  {loading ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Edit Salary Modal */}
       <AnimatePresence>
         {isEditModalOpen && (
