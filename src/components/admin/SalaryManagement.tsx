@@ -7,20 +7,33 @@ import {
   Calendar,
   FileText,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Edit2,
+  X
 } from 'lucide-react';
-import { collection, getDocs, addDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Employee, SalaryRecord } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function SalaryManagement() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [salaryRecords, setSalaryRecords] = useState<SalaryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<SalaryRecord | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    bonus: 0,
+    incentive: 0,
+    pf: 0,
+    esi: 0,
+    professionalTax: 0,
+    deduction: 0
+  });
 
   useEffect(() => {
     fetchData();
@@ -71,21 +84,45 @@ export default function SalaryManagement() {
     doc.line(20, 105, 190, 105);
     
     doc.setFont('helvetica', 'normal');
-    doc.text('Base Salary:', 20, 115);
-    doc.text(formatCurrency(record.baseSalary), 150, 115);
+    let y = 115;
     
-    doc.text('Bonus:', 20, 125);
-    doc.text(formatCurrency(record.bonus), 150, 125);
+    // Earnings
+    doc.text('Base Salary:', 20, y);
+    doc.text(formatCurrency(record.baseSalary), 150, y);
+    y += 10;
     
+    doc.text('Bonus:', 20, y);
+    doc.text(formatCurrency(record.bonus), 150, y);
+    y += 10;
+
+    doc.text('Incentive:', 20, y);
+    doc.text(formatCurrency(record.incentive || 0), 150, y);
+    y += 10;
+    
+    // Deductions
     doc.setTextColor(220, 38, 38);
-    doc.text('Deductions:', 20, 135);
-    doc.text(`- ${formatCurrency(record.deduction)}`, 150, 135);
+    doc.text('PF Deduction:', 20, y);
+    doc.text(`- ${formatCurrency(record.pf || 0)}`, 150, y);
+    y += 10;
+
+    doc.text('ESI Deduction:', 20, y);
+    doc.text(`- ${formatCurrency(record.esi || 0)}`, 150, y);
+    y += 10;
+
+    doc.text('Professional Tax:', 20, y);
+    doc.text(`- ${formatCurrency(record.professionalTax || 0)}`, 150, y);
+    y += 10;
     
-    doc.line(20, 145, 190, 145);
+    doc.text('Other Deductions:', 20, y);
+    doc.text(`- ${formatCurrency(record.deduction)}`, 150, y);
+    y += 10;
+    
+    doc.line(20, y, 190, y);
+    y += 10;
     doc.setTextColor(0);
     doc.setFont('helvetica', 'bold');
-    doc.text('Net Salary Payable:', 20, 155);
-    doc.text(formatCurrency(record.netSalary), 150, 155);
+    doc.text('Net Salary Payable:', 20, y);
+    doc.text(formatCurrency(record.netSalary), 150, y);
     
     // Footer
     doc.setFontSize(10);
@@ -110,6 +147,10 @@ export default function SalaryManagement() {
           leaveDays: 0,
           baseSalary: emp.monthlySalary,
           bonus: 0,
+          incentive: 0,
+          pf: 0,
+          esi: 0,
+          professionalTax: 0,
           deduction: 0,
           netSalary: emp.monthlySalary,
           generatedAt: new Date().toISOString()
@@ -122,6 +163,48 @@ export default function SalaryManagement() {
     } catch (error) {
       toast.dismiss();
       toast.error('Failed to generate records');
+    }
+  };
+
+  const handleEdit = (record: SalaryRecord) => {
+    setEditingRecord(record);
+    setEditFormData({
+      bonus: record.bonus,
+      incentive: record.incentive || 0,
+      pf: record.pf || 0,
+      esi: record.esi || 0,
+      professionalTax: record.professionalTax || 0,
+      deduction: record.deduction
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+
+    setLoading(true);
+    try {
+      const totalEarnings = editingRecord.baseSalary + editFormData.bonus + editFormData.incentive;
+      const totalDeductions = editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction;
+      const netSalary = totalEarnings - totalDeductions;
+
+      await updateDoc(doc(db, 'salary', editingRecord.id), {
+        bonus: editFormData.bonus,
+        incentive: editFormData.incentive,
+        pf: editFormData.pf,
+        esi: editFormData.esi,
+        professionalTax: editFormData.professionalTax,
+        deduction: editFormData.deduction,
+        netSalary
+      });
+      toast.success('Salary record updated');
+      setIsEditModalOpen(false);
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to update record');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -178,7 +261,7 @@ export default function SalaryManagement() {
                 <th className="px-6 py-4 font-semibold">Bonus/Deduct</th>
                 <th className="px-6 py-4 font-semibold">Net Salary</th>
                 <th className="px-6 py-4 font-semibold">Status</th>
-                <th className="px-6 py-4 font-semibold text-right">Slip</th>
+                <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -200,9 +283,13 @@ export default function SalaryManagement() {
                     <td className="px-6 py-4 text-sm text-slate-600">{formatCurrency(emp.monthlySalary)}</td>
                     <td className="px-6 py-4">
                       {record ? (
-                        <div className="text-xs">
-                          <p className="text-emerald-600">+{formatCurrency(record.bonus)}</p>
-                          <p className="text-red-600">-{formatCurrency(record.deduction)}</p>
+                        <div className="text-[10px] space-y-0.5">
+                          <p className="text-emerald-600">Bonus: +{formatCurrency(record.bonus)}</p>
+                          <p className="text-emerald-600">Inc: +{formatCurrency(record.incentive || 0)}</p>
+                          <p className="text-red-600">PF: -{formatCurrency(record.pf || 0)}</p>
+                          <p className="text-red-600">ESI: -{formatCurrency(record.esi || 0)}</p>
+                          <p className="text-red-600">PT: -{formatCurrency(record.professionalTax || 0)}</p>
+                          <p className="text-red-600">Other: -{formatCurrency(record.deduction)}</p>
                         </div>
                       ) : '--'}
                     </td>
@@ -217,14 +304,26 @@ export default function SalaryManagement() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {record && (
-                        <button 
-                          onClick={() => generateSalarySlip(emp, record)}
-                          className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {record && (
+                          <>
+                            <button 
+                              onClick={() => handleEdit(record)}
+                              className="p-2 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors"
+                              title="Edit Record"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => generateSalarySlip(emp, record)}
+                              className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                              title="Download Slip"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -233,6 +332,126 @@ export default function SalaryManagement() {
           </table>
         </div>
       </div>
+      {/* Edit Salary Modal */}
+      <AnimatePresence>
+        {isEditModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white">
+                <h3 className="text-xl font-bold">Edit Salary Record</h3>
+                <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <form onSubmit={handleUpdateRecord} className="p-8 space-y-4 max-h-[70vh] overflow-y-auto">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1">Bonus (INR)</label>
+                    <input 
+                      type="number" 
+                      value={editFormData.bonus}
+                      onChange={(e) => setEditFormData({...editFormData, bonus: Number(e.target.value)})}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1">Incentive (INR)</label>
+                    <input 
+                      type="number" 
+                      value={editFormData.incentive}
+                      onChange={(e) => setEditFormData({...editFormData, incentive: Number(e.target.value)})}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1">PF (INR)</label>
+                    <input 
+                      type="number" 
+                      value={editFormData.pf}
+                      onChange={(e) => setEditFormData({...editFormData, pf: Number(e.target.value)})}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1">ESI (INR)</label>
+                    <input 
+                      type="number" 
+                      value={editFormData.esi}
+                      onChange={(e) => setEditFormData({...editFormData, esi: Number(e.target.value)})}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1">Prof. Tax (INR)</label>
+                    <input 
+                      type="number" 
+                      value={editFormData.professionalTax}
+                      onChange={(e) => setEditFormData({...editFormData, professionalTax: Number(e.target.value)})}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1">Other Deductions (INR)</label>
+                    <input 
+                      type="number" 
+                      value={editFormData.deduction}
+                      onChange={(e) => setEditFormData({...editFormData, deduction: Number(e.target.value)})}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-slate-600">Base Salary:</span>
+                    <span className="font-semibold">{formatCurrency(editingRecord?.baseSalary || 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-emerald-600">Total Earnings (+):</span>
+                    <span className="font-semibold text-emerald-600">+{formatCurrency((editingRecord?.baseSalary || 0) + editFormData.bonus + editFormData.incentive)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs mb-3 pb-3 border-b border-blue-200">
+                    <span className="text-red-600">Total Deductions (-):</span>
+                    <span className="font-semibold text-red-600">-{formatCurrency(editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold text-blue-700">
+                    <span>Net Payable:</span>
+                    <span>{formatCurrency(((editingRecord?.baseSalary || 0) + editFormData.bonus + editFormData.incentive) - (editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction))}</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 mt-6">
+                  <button 
+                    type="button"
+                    onClick={() => setIsEditModalOpen(false)}
+                    className="px-6 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="px-8 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
+                  >
+                    {loading ? 'Updating...' : 'Update Record'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

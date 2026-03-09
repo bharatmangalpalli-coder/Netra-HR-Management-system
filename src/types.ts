@@ -74,7 +74,11 @@ export interface SalaryRecord {
   leaveDays: number;
   baseSalary: number;
   bonus: number;
-  deduction: number;
+  incentive: number;
+  pf: number;
+  esi: number;
+  professionalTax: number;
+  deduction: number; // Other deductions
   netSalary: number;
   generatedAt: string;
 }

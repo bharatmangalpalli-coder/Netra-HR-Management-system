@@ -10,9 +10,10 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Attendance } from '../../types';
 import { getTodayDate } from '../../lib/utils';
@@ -25,6 +26,8 @@ export default function AttendanceManagement() {
   const [selectedDate, setSelectedDate] = useState(getTodayDate());
   const [searchTerm, setSearchTerm] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAttendance();
@@ -48,6 +51,27 @@ export default function AttendanceManagement() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    setLoading(true);
+    try {
+      await deleteDoc(doc(db, 'attendance', deletingId));
+      toast.success('Attendance record deleted');
+      setIsDeleteModalOpen(false);
+      setDeletingId(null);
+      fetchAttendance();
+    } catch (error) {
+      toast.error('Failed to delete record');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmDelete = (id: string) => {
+    setDeletingId(id);
+    setIsDeleteModalOpen(true);
   };
 
   const filteredAttendance = attendance.filter(item => 
@@ -134,6 +158,7 @@ export default function AttendanceManagement() {
                 <th className="px-6 py-4 font-semibold">Location</th>
                 <th className="px-6 py-4 font-semibold">Status</th>
                 <th className="px-6 py-4 font-semibold">Selfie</th>
+                <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -220,6 +245,15 @@ export default function AttendanceManagement() {
                         </div>
                       )}
                     </td>
+                    <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => confirmDelete(item.id)}
+                        className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
+                        title="Delete record"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -227,6 +261,41 @@ export default function AttendanceManagement() {
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Record?</h3>
+              <p className="text-slate-500 text-sm mb-8">Are you sure you want to delete this attendance record? This action cannot be undone.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 px-6 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="flex-1 px-6 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
+                >
+                  {loading ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Selfie Preview Modal */}
       <AnimatePresence>
