@@ -85,6 +85,8 @@ export default function TaskSection({ employee }: Props) {
     }
   };
 
+  const currentUserId = employee.employeeId || employee.id;
+
   return (
     <div className="space-y-8">
       <h2 className="text-xl font-bold text-slate-800 px-2">Assigned Tasks</h2>
@@ -166,9 +168,9 @@ export default function TaskSection({ employee }: Props) {
                   <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Comments ({selectedTask.comments.length})</h4>
                   <div className="space-y-4">
                     {selectedTask.comments.map((c) => (
-                      <div key={c.id} className={`flex flex-col ${c.userId === employee.employeeId ? 'items-end' : 'items-start'}`}>
+                      <div key={c.id} className={`flex flex-col ${c.userId === currentUserId ? 'items-end' : 'items-start'}`}>
                         <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${
-                          c.userId === employee.employeeId ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-800 rounded-tl-none'
+                          c.userId === currentUserId ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-800 rounded-tl-none'
                         }`}>
                           {c.text}
                         </div>

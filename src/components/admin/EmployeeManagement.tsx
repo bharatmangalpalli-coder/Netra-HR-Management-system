@@ -21,6 +21,10 @@ export default function EmployeeManagement() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Form State
@@ -61,58 +65,135 @@ export default function EmployeeManagement() {
     e.preventDefault();
     setLoading(true);
     try {
-      // 1. Create Auth User (Note: In production, this should be done via Cloud Functions to avoid logging out admin)
-      // For this demo, we'll just add to Firestore and assume auth is handled or use a mock approach
-      // Real implementation would use Firebase Admin SDK or a custom endpoint
+      if (isEditMode && editingId) {
+        const empRef = doc(db, 'employees', editingId);
+        await updateDoc(empRef, {
+          name: formData.name,
+          mobile: formData.mobile,
+          address: formData.address,
+          aadhaar: formData.aadhaar,
+          joiningDate: formData.joiningDate,
+          exitDate: formData.exitDate || null,
+          designation: formData.designation,
+          monthlySalary: formData.monthlySalary,
+          email: formData.email
+        });
+        toast.success('Employee updated successfully');
+      } else {
+        const employeeId = `EMP${String(employees.length + 1).padStart(3, '0')}`;
+        const newEmployee = {
+          employeeId,
+          name: formData.name,
+          mobile: formData.mobile,
+          address: formData.address,
+          aadhaar: formData.aadhaar,
+          joiningDate: formData.joiningDate,
+          exitDate: formData.exitDate || null,
+          designation: formData.designation,
+          monthlySalary: formData.monthlySalary,
+          role: formData.role,
+          status: 'active',
+          email: formData.email
+        };
+        await addDoc(collection(db, 'employees'), newEmployee);
+        toast.success('Employee added successfully');
+      }
       
-      const employeeId = `EMP${String(employees.length + 1).padStart(3, '0')}`;
-      
-      const newEmployee = {
-        employeeId,
-        name: formData.name,
-        mobile: formData.mobile,
-        address: formData.address,
-        aadhaar: formData.aadhaar,
-        joiningDate: formData.joiningDate,
-        exitDate: formData.exitDate || null,
-        designation: formData.designation,
-        monthlySalary: formData.monthlySalary,
-        role: formData.role,
-        status: 'active',
-        email: formData.email
-      };
-
-      await addDoc(collection(db, 'employees'), newEmployee);
-      
-      toast.success('Employee added successfully');
       setIsModalOpen(false);
       fetchEmployees();
-      setFormData({
-        name: '', email: '', password: 'password123', mobile: '', address: '', aadhaar: '',
-        joiningDate: new Date().toISOString().split('T')[0], exitDate: '', designation: '', monthlySalary: 0, role: 'EMPLOYEE'
-      });
+      resetForm();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to add employee');
+      toast.error(error.message || 'Failed to save employee');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this employee?')) return;
+  const resetForm = () => {
+    setFormData({
+      name: '', email: '', password: 'password123', mobile: '', address: '', aadhaar: '',
+      joiningDate: new Date().toISOString().split('T')[0], exitDate: '', designation: '', monthlySalary: 0, role: 'EMPLOYEE'
+    });
+    setIsEditMode(false);
+    setEditingId(null);
+  };
+
+  const handleEdit = (emp: Employee) => {
+    setFormData({
+      name: emp.name,
+      email: (emp as any).email || '',
+      password: 'password123',
+      mobile: emp.mobile || '',
+      address: emp.address || '',
+      aadhaar: emp.aadhaar || '',
+      joiningDate: emp.joiningDate,
+      exitDate: emp.exitDate || '',
+      designation: emp.designation || '',
+      monthlySalary: emp.monthlySalary,
+      role: emp.role
+    });
+    setEditingId(emp.id);
+    setIsEditMode(true);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    setLoading(true);
     try {
-      await deleteDoc(doc(db, 'employees', id));
+      await deleteDoc(doc(db, 'employees', deletingId));
       toast.success('Employee deleted');
+      setIsDeleteModalOpen(false);
+      setDeletingId(null);
       fetchEmployees();
     } catch (error) {
       toast.error('Failed to delete');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const confirmDelete = (id: string) => {
+    setDeletingId(id);
+    setIsDeleteModalOpen(true);
   };
 
   const filteredEmployees = employees.filter(emp => 
     emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleExport = () => {
+    if (employees.length === 0) {
+      return toast.error("No employees to export");
+    }
+    
+    const headers = ['Employee ID', 'Name', 'Email', 'Mobile', 'Designation', 'Joining Date', 'Monthly Salary', 'Status'];
+    const csvContent = [
+      headers.join(','),
+      ...employees.map(emp => [
+        emp.employeeId,
+        emp.name,
+        (emp as any).email || '',
+        emp.mobile || '',
+        emp.designation || '',
+        emp.joiningDate,
+        emp.monthlySalary,
+        emp.status
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `employees_list.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Employee list exported successfully");
+  };
 
   return (
     <div className="space-y-6">
@@ -129,12 +210,18 @@ export default function EmployeeManagement() {
           />
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-xl border border-slate-200 hover:bg-slate-100 transition-all font-medium">
+          <button 
+            onClick={handleExport}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-xl border border-slate-200 hover:bg-slate-100 transition-all font-medium"
+          >
             <Download className="w-4 h-4" />
             Export
           </button>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              resetForm();
+              setIsModalOpen(true);
+            }}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 font-medium"
           >
             <UserPlus className="w-4 h-4" />
@@ -202,12 +289,15 @@ export default function EmployeeManagement() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors">
+                        <button 
+                          onClick={() => handleEdit(emp)}
+                          className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button 
-                          onClick={() => handleDelete(emp.id)}
-                          className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
+                          onClick={() => confirmDelete(emp.id)}
+                          className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -221,6 +311,41 @@ export default function EmployeeManagement() {
         </div>
       </div>
 
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Employee?</h3>
+              <p className="text-slate-500 text-sm mb-8">This action cannot be undone. All data associated with this employee will be permanently removed.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 px-6 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="flex-1 px-6 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
+                >
+                  {loading ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Add Employee Modal */}
       <AnimatePresence>
         {isModalOpen && (
@@ -232,7 +357,7 @@ export default function EmployeeManagement() {
               className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white">
-                <h3 className="text-xl font-bold">Add New Employee</h3>
+                <h3 className="text-xl font-bold">{isEditMode ? 'Edit Employee' : 'Add New Employee'}</h3>
                 <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                   <X className="w-6 h-6" />
                 </button>
@@ -345,7 +470,7 @@ export default function EmployeeManagement() {
                     disabled={loading}
                     className="px-8 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
                   >
-                    {loading ? 'Adding...' : 'Save Employee'}
+                    {loading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update Employee' : 'Save Employee')}
                   </button>
                 </div>
               </form>

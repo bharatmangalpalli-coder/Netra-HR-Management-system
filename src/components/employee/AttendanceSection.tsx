@@ -54,6 +54,7 @@ export default function AttendanceSection({ employee }: Props) {
       return;
     }
 
+    setLoading(true);
     try {
       setShowCamera(true);
       setCapturedImage(null);
@@ -101,6 +102,8 @@ export default function AttendanceSection({ employee }: Props) {
       }
       
       toast.error(errorMsg);
+    } finally {
+      setLoading(false);
     }
   };
 

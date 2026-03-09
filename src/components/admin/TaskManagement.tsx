@@ -10,11 +10,13 @@ import {
   User,
   Flag,
   MessageSquare,
-  Trash2
+  Trash2,
+  Send,
+  X
 } from 'lucide-react';
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, where, arrayUnion } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Task, Employee } from '../../types';
+import { Task, Employee, TaskComment } from '../../types';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -23,6 +25,10 @@ export default function TaskManagement() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [newComment, setNewComment] = useState('');
   
   const [formData, setFormData] = useState({
     title: '',
@@ -89,14 +95,50 @@ export default function TaskManagement() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this task?')) return;
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    setLoading(true);
     try {
-      await deleteDoc(doc(db, 'tasks', id));
+      await deleteDoc(doc(db, 'tasks', deletingId));
       toast.success('Task deleted');
+      setIsDeleteModalOpen(false);
+      setDeletingId(null);
       fetchTasks();
     } catch (error) {
       toast.error('Failed to delete');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmDelete = (id: string) => {
+    setDeletingId(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment || !selectedTask) return;
+    
+    try {
+      const commentObj: TaskComment = {
+        id: Date.now().toString(),
+        userId: 'admin',
+        userName: 'Admin',
+        text: newComment,
+        timestamp: new Date().toISOString()
+      };
+
+      await updateDoc(doc(db, 'tasks', selectedTask.id), {
+        comments: arrayUnion(commentObj)
+      });
+
+      setNewComment('');
+      fetchTasks();
+      setSelectedTask({...selectedTask, comments: [...selectedTask.comments, commentObj]});
+      toast.success('Comment added');
+    } catch (error) {
+      toast.error('Failed to add comment');
     }
   };
 
@@ -132,7 +174,8 @@ export default function TaskManagement() {
             <motion.div 
               layout
               key={task.id} 
-              className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group relative"
+              onClick={() => setSelectedTask(task)}
+              className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group relative cursor-pointer"
             >
               <div className="flex items-start justify-between mb-4">
                 <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
@@ -143,7 +186,10 @@ export default function TaskManagement() {
                   {task.priority} Priority
                 </span>
                 <button 
-                  onClick={() => handleDelete(task.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    confirmDelete(task.id);
+                  }}
                   className="p-1 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -186,6 +232,112 @@ export default function TaskManagement() {
           ))
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Task?</h3>
+              <p className="text-slate-500 text-sm mb-8">Are you sure you want to delete this task? This action cannot be undone.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 px-6 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="flex-1 px-6 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
+                >
+                  {loading ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Task Detail Modal */}
+      <AnimatePresence>
+        {selectedTask && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white shrink-0">
+                <div>
+                  <h3 className="text-xl font-bold">{selectedTask.title}</h3>
+                  <p className="text-xs text-blue-100 mt-1">Assigned to {selectedTask.assignedToName} • Due {selectedTask.deadline}</p>
+                </div>
+                <button onClick={() => setSelectedTask(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Description</h4>
+                  <p className="text-slate-600 leading-relaxed">{selectedTask.description}</p>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Messages ({selectedTask.comments.length})</h4>
+                  <div className="space-y-4">
+                    {selectedTask.comments.length === 0 ? (
+                      <p className="text-sm text-slate-400 italic">No messages yet</p>
+                    ) : (
+                      selectedTask.comments.map((c) => (
+                        <div key={c.id} className={`flex flex-col ${c.userId === 'admin' ? 'items-end' : 'items-start'}`}>
+                          <div className={`max-w-[85%] p-4 rounded-2xl text-sm ${
+                            c.userId === 'admin' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-800 rounded-tl-none'
+                          }`}>
+                            {c.text}
+                          </div>
+                          <span className="text-[10px] text-slate-400 mt-1">
+                            {c.userName} • {new Date(c.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-slate-100 bg-slate-50 shrink-0">
+                <form onSubmit={handleAddComment} className="relative">
+                  <input 
+                    type="text" 
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Type a message..."
+                    className="w-full pl-6 pr-14 py-4 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+                  />
+                  <button 
+                    type="submit"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-3 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Add Task Modal */}
       <AnimatePresence>
