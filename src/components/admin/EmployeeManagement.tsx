@@ -39,7 +39,10 @@ export default function EmployeeManagement() {
     exitDate: '',
     designation: '',
     monthlySalary: 0,
-    role: 'EMPLOYEE' as any
+    role: 'EMPLOYEE' as any,
+    shiftStart: '09:00',
+    shiftEnd: '18:00',
+    isFlexibleShift: false
   });
 
   useEffect(() => {
@@ -76,7 +79,10 @@ export default function EmployeeManagement() {
           exitDate: formData.exitDate || null,
           designation: formData.designation,
           monthlySalary: formData.monthlySalary,
-          email: formData.email
+          email: formData.email,
+          shiftStart: formData.shiftStart,
+          shiftEnd: formData.shiftEnd,
+          isFlexibleShift: formData.isFlexibleShift
         });
         toast.success('Employee updated successfully');
       } else {
@@ -93,7 +99,10 @@ export default function EmployeeManagement() {
           monthlySalary: formData.monthlySalary,
           role: formData.role,
           status: 'active',
-          email: formData.email
+          email: formData.email,
+          shiftStart: formData.shiftStart,
+          shiftEnd: formData.shiftEnd,
+          isFlexibleShift: formData.isFlexibleShift
         };
         await addDoc(collection(db, 'employees'), newEmployee);
         toast.success('Employee added successfully');
@@ -112,7 +121,8 @@ export default function EmployeeManagement() {
   const resetForm = () => {
     setFormData({
       name: '', email: '', password: 'password123', mobile: '', address: '', aadhaar: '',
-      joiningDate: new Date().toISOString().split('T')[0], exitDate: '', designation: '', monthlySalary: 0, role: 'EMPLOYEE'
+      joiningDate: new Date().toISOString().split('T')[0], exitDate: '', designation: '', monthlySalary: 0, role: 'EMPLOYEE',
+      shiftStart: '09:00', shiftEnd: '18:00', isFlexibleShift: false
     });
     setIsEditMode(false);
     setEditingId(null);
@@ -130,7 +140,10 @@ export default function EmployeeManagement() {
       exitDate: emp.exitDate || '',
       designation: emp.designation || '',
       monthlySalary: emp.monthlySalary,
-      role: emp.role
+      role: emp.role,
+      shiftStart: emp.shiftStart || '09:00',
+      shiftEnd: emp.shiftEnd || '18:00',
+      isFlexibleShift: emp.isFlexibleShift || false
     });
     setEditingId(emp.id);
     setIsEditMode(true);
@@ -238,6 +251,7 @@ export default function EmployeeManagement() {
               <tr>
                 <th className="px-6 py-4 font-semibold">Employee</th>
                 <th className="px-6 py-4 font-semibold">Designation</th>
+                <th className="px-6 py-4 font-semibold">Shift</th>
                 <th className="px-6 py-4 font-semibold">Contact</th>
                 <th className="px-6 py-4 font-semibold">Joining Date</th>
                 <th className="px-6 py-4 font-semibold">Salary</th>
@@ -270,6 +284,17 @@ export default function EmployeeManagement() {
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-sm text-slate-600">{emp.designation || 'N/A'}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      {emp.isFlexibleShift ? (
+                        <span className="px-2 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-lg uppercase tracking-wider">Flexible</span>
+                      ) : (
+                        <div className="flex items-center gap-1 text-xs font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded-lg w-fit">
+                          <span>{emp.shiftStart || '09:00'}</span>
+                          <span className="text-slate-400">-</span>
+                          <span>{emp.shiftEnd || '18:00'}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-sm text-slate-600">{emp.mobile}</p>
@@ -447,6 +472,42 @@ export default function EmployeeManagement() {
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
+                <div className="md:col-span-2 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox" 
+                      id="isFlexibleShift"
+                      checked={formData.isFlexibleShift}
+                      onChange={(e) => setFormData({...formData, isFlexibleShift: e.target.checked})}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <label htmlFor="isFlexibleShift" className="text-sm font-medium text-slate-700">Flexible Shift (No fixed timings)</label>
+                  </div>
+                </div>
+                {!formData.isFlexibleShift && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-slate-700">Shift Start Time</label>
+                      <input 
+                        required
+                        type="time" 
+                        value={formData.shiftStart}
+                        onChange={(e) => setFormData({...formData, shiftStart: e.target.value})}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-slate-700">Shift End Time</label>
+                      <input 
+                        required
+                        type="time" 
+                        value={formData.shiftEnd}
+                        onChange={(e) => setFormData({...formData, shiftEnd: e.target.value})}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="md:col-span-2 space-y-1">
                   <label className="text-sm font-medium text-slate-700">Address</label>
                   <textarea 

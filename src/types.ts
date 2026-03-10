@@ -14,6 +14,9 @@ export interface Employee {
   role: UserRole;
   status: 'active' | 'inactive';
   photoUrl?: string;
+  shiftStart?: string; // HH:mm
+  shiftEnd?: string;   // HH:mm
+  isFlexibleShift?: boolean;
 }
 
 export interface Attendance {

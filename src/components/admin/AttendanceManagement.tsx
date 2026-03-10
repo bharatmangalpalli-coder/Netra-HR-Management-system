@@ -55,6 +55,21 @@ export default function AttendanceManagement() {
 
   const handleDelete = async () => {
     if (!deletingId) return;
+    
+    const recordToDelete = attendance.find(a => a.id === deletingId);
+    if (recordToDelete) {
+      const recordDate = new Date(recordToDelete.date);
+      const now = new Date();
+      
+      // Check if the record is in the current month and year
+      if (recordDate.getMonth() === now.getMonth() && recordDate.getFullYear() === now.getFullYear()) {
+        toast.error('Current month attendance records cannot be deleted');
+        setIsDeleteModalOpen(false);
+        setDeletingId(null);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       await deleteDoc(doc(db, 'attendance', deletingId));
