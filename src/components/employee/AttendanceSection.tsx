@@ -28,6 +28,7 @@ export default function AttendanceSection({ employee }: Props) {
   
   // Camera State
   const [showCamera, setShowCamera] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'in' | 'out'>('in');
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
@@ -48,7 +49,7 @@ export default function AttendanceSection({ employee }: Props) {
     }
   }, [showCamera, stream]);
 
-  const startCamera = async () => {
+  const startCamera = async (mode: 'in' | 'out' = 'in') => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       toast.error("Camera access is not supported by your browser or environment.");
       return;
@@ -56,6 +57,7 @@ export default function AttendanceSection({ employee }: Props) {
 
     setLoading(true);
     try {
+      setCameraMode(mode);
       setShowCamera(true);
       setCapturedImage(null);
       
@@ -226,11 +228,20 @@ export default function AttendanceSection({ employee }: Props) {
   const handleMarkOut = async () => {
     console.log("handleMarkOut clicked");
     if (!todayAttendance) return;
+    if (!capturedImage) {
+      return toast.error("Please capture a selfie first");
+    }
+
     setLoading(true);
     try {
       const outTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      await updateDoc(doc(db, 'attendance', todayAttendance.id), { outTime });
+      await updateDoc(doc(db, 'attendance', todayAttendance.id), { 
+        outTime,
+        outSelfieUrl: capturedImage 
+      });
       toast.success('Checked out successfully');
+      setShowCamera(false);
+      setCapturedImage(null);
       fetchTodayAttendance();
     } catch (error) {
       toast.error('Failed to mark out');
@@ -307,7 +318,7 @@ export default function AttendanceSection({ employee }: Props) {
             <div className="mt-10 space-y-4">
               {!todayAttendance ? (
                 <button 
-                  onClick={startCamera}
+                  onClick={() => startCamera('in')}
                   disabled={loading}
                   className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
@@ -335,10 +346,11 @@ export default function AttendanceSection({ employee }: Props) {
                   ) : null}
                   
                   <button 
-                    onClick={handleMarkOut}
+                    onClick={() => startCamera('out')}
                     disabled={loading || (todayAttendance.breakInTime && !todayAttendance.breakOutTime)}
-                    className="w-full py-4 bg-amber-500 text-white rounded-3xl font-bold text-lg shadow-xl shadow-amber-100 hover:bg-amber-600 transition-all disabled:opacity-50"
+                    className="w-full py-4 bg-amber-500 text-white rounded-3xl font-bold text-lg shadow-xl shadow-amber-100 hover:bg-amber-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
+                    <CameraIcon className="w-6 h-6" />
                     {loading ? 'Processing...' : 'Mark Attendance OUT'}
                   </button>
                 </div>
@@ -364,6 +376,12 @@ export default function AttendanceSection({ employee }: Props) {
         </div>
       ) : (
         <div className="space-y-4">
+          <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-start gap-3 mb-2">
+            <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+            <p className="text-xs text-blue-700 leading-relaxed">
+              <strong>Attendance Protection:</strong> Your attendance records are securely saved and protected for a minimum of 30 days for payroll accuracy.
+            </p>
+          </div>
           {history.map((item) => (
             <div key={item.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
               <div>
@@ -441,17 +459,17 @@ export default function AttendanceSection({ employee }: Props) {
               ) : (
                 <>
                   <button 
-                    onClick={handleMarkIn}
+                    onClick={cameraMode === 'in' ? handleMarkIn : handleMarkOut}
                     disabled={loading}
                     className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-900/40 flex items-center justify-center gap-2"
                   >
                     {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <CheckCircle2 className="w-6 h-6" />}
-                    {loading ? 'Marking Attendance...' : 'Confirm & Mark IN'}
+                    {loading ? 'Marking Attendance...' : cameraMode === 'in' ? 'Confirm & Mark IN' : 'Confirm & Mark OUT'}
                   </button>
                   <button 
                     onClick={() => {
                       setCapturedImage(null);
-                      startCamera();
+                      startCamera(cameraMode);
                     }}
                     className="w-full py-4 bg-white/10 text-white rounded-3xl font-bold text-lg"
                   >

@@ -61,9 +61,13 @@ export default function AttendanceManagement() {
       const recordDate = new Date(recordToDelete.date);
       const now = new Date();
       
-      // Check if the record is in the current month and year
-      if (recordDate.getMonth() === now.getMonth() && recordDate.getFullYear() === now.getFullYear()) {
-        toast.error('Current month attendance records cannot be deleted');
+      // Calculate difference in days
+      const diffTime = now.getTime() - recordDate.getTime();
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+      
+      // Protection for at least 30 days
+      if (diffDays <= 30) {
+        toast.error('Attendance records less than 30 days old are protected and cannot be deleted.');
         setIsDeleteModalOpen(false);
         setDeletingId(null);
         return;
@@ -129,6 +133,13 @@ export default function AttendanceManagement() {
   return (
     <div className="space-y-6">
       {/* Filters */}
+      <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+        <p className="text-sm text-blue-700 leading-relaxed">
+          <strong>Data Protection Policy:</strong> Attendance records less than 30 days old are protected and cannot be deleted to ensure payroll integrity and compliance.
+        </p>
+      </div>
+
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:flex-none">
@@ -172,7 +183,7 @@ export default function AttendanceManagement() {
                 <th className="px-6 py-4 font-semibold">Out Time</th>
                 <th className="px-6 py-4 font-semibold">Location</th>
                 <th className="px-6 py-4 font-semibold">Status</th>
-                <th className="px-6 py-4 font-semibold">Selfie</th>
+                <th className="px-6 py-4 font-semibold">Selfies</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
@@ -247,18 +258,44 @@ export default function AttendanceManagement() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {item.selfieUrl ? (
-                        <button 
-                          onClick={() => setPreviewImage(item.selfieUrl!)}
-                          className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
-                        >
-                          <img src={item.selfieUrl} alt="Selfie" className="w-full h-full object-cover" />
-                        </button>
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
-                          <User className="w-4 h-4 text-slate-300" />
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {item.selfieUrl ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <button 
+                              onClick={() => setPreviewImage(item.selfieUrl!)}
+                              className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
+                              title="In Selfie"
+                            >
+                              <img src={item.selfieUrl} alt="In Selfie" className="w-full h-full object-cover" />
+                            </button>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">In</span>
+                          </div>
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
+                            <User className="w-4 h-4 text-slate-300" />
+                          </div>
+                        )}
+
+                        {item.outSelfieUrl ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <button 
+                              onClick={() => setPreviewImage(item.outSelfieUrl!)}
+                              className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
+                              title="Out Selfie"
+                            >
+                              <img src={item.outSelfieUrl} alt="Out Selfie" className="w-full h-full object-cover" />
+                            </button>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">Out</span>
+                          </div>
+                        ) : item.outTime ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
+                              <User className="w-4 h-4 text-slate-300" />
+                            </div>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">Out</span>
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button 

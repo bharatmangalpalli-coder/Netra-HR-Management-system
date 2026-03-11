@@ -33,6 +33,7 @@ export interface Attendance {
     lng: number;
   };
   selfieUrl?: string;
+  outSelfieUrl?: string;
   status: 'present' | 'absent' | 'late';
 }
 
