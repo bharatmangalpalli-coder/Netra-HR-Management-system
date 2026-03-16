@@ -19,6 +19,7 @@ import { Attendance } from '../../types';
 import { getTodayDate } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
+import EmployeeAttendanceCalendar from './EmployeeAttendanceCalendar';
 
 export default function AttendanceManagement() {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -28,6 +29,7 @@ export default function AttendanceManagement() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedEmployeeForCalendar, setSelectedEmployeeForCalendar] = useState<{id: string, name: string} | null>(null);
 
   useEffect(() => {
     fetchAttendance();
@@ -298,13 +300,22 @@ export default function AttendanceManagement() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => confirmDelete(item.id)}
-                        className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
-                        title="Delete record"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => setSelectedEmployeeForCalendar({ id: item.employeeId, name: item.employeeName })}
+                          className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
+                          title="View Full Month Calendar"
+                        >
+                          <Calendar className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => confirmDelete(item.id)}
+                          className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
+                          title="Delete record"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -372,6 +383,17 @@ export default function AttendanceManagement() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Attendance Calendar Modal */}
+      <AnimatePresence>
+        {selectedEmployeeForCalendar && (
+          <EmployeeAttendanceCalendar 
+            employeeId={selectedEmployeeForCalendar.id}
+            employeeName={selectedEmployeeForCalendar.name}
+            onClose={() => setSelectedEmployeeForCalendar(null)}
+          />
         )}
       </AnimatePresence>
     </div>

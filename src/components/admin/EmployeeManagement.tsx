@@ -7,7 +7,8 @@ import {
   MoreVertical,
   UserPlus,
   Filter,
-  Download
+  Download,
+  Calendar
 } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
@@ -16,6 +17,7 @@ import { Employee } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
+import EmployeeAttendanceCalendar from './EmployeeAttendanceCalendar';
 
 export default function EmployeeManagement() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -26,6 +28,7 @@ export default function EmployeeManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedEmployeeForCalendar, setSelectedEmployeeForCalendar] = useState<{id: string, name: string} | null>(null);
   
   // Form State
   const [formData, setFormData] = useState({
@@ -315,6 +318,13 @@ export default function EmployeeManagement() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
+                          onClick={() => setSelectedEmployeeForCalendar({ id: emp.employeeId, name: emp.name })}
+                          className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
+                          title="View Attendance Calendar"
+                        >
+                          <Calendar className="w-4 h-4" />
+                        </button>
+                        <button 
                           onClick={() => handleEdit(emp)}
                           className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
                         >
@@ -537,6 +547,15 @@ export default function EmployeeManagement() {
               </form>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {selectedEmployeeForCalendar && (
+          <EmployeeAttendanceCalendar 
+            employeeId={selectedEmployeeForCalendar.id}
+            employeeName={selectedEmployeeForCalendar.name}
+            onClose={() => setSelectedEmployeeForCalendar(null)}
+          />
         )}
       </AnimatePresence>
     </div>
