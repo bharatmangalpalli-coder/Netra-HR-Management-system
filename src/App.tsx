@@ -77,35 +77,22 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
       <Toaster position="top-right" />
       
-      {user && (
-        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">N</div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-800">Netra HRMS</h1>
-          </div>
-          <button 
-            onClick={() => auth?.signOut()}
-            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
-        </header>
-      )}
-
-      <main className="max-w-md mx-auto">
+      <main className="w-full">
         {!user ? (
           <Login />
         ) : (
           <>
             {role === 'ADMIN' && <AdminDashboard />}
             {role === 'EMPLOYEE' && employeeData && (
-              <EmployeeDashboard employee={employeeData} />
+              <div className="max-w-md mx-auto">
+                <EmployeeDashboard employee={employeeData} />
+              </div>
             )}
             {role === null && (
-              <div className="flex flex-col items-center justify-center min-h-[80vh] p-8 text-center">
+              <div className="max-w-md mx-auto flex flex-col items-center justify-center min-h-[80vh] p-8 text-center">
                 <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-6">
                   <LogOut className="w-10 h-10" />
                 </div>

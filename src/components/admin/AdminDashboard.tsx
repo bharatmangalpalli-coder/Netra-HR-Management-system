@@ -28,6 +28,13 @@ type View = 'dashboard' | 'employees' | 'attendance' | 'leaves' | 'tasks' | 'sal
 export default function AdminDashboard() {
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -69,13 +76,13 @@ export default function AdminDashboard() {
       <motion.aside 
         initial={false}
         animate={{ 
-          width: isSidebarOpen ? 280 : (window.innerWidth < 1024 ? 0 : 80),
-          x: isSidebarOpen || window.innerWidth >= 1024 ? 0 : -280
+          width: isSidebarOpen ? 280 : (windowWidth < 1024 ? 0 : 80),
+          x: isSidebarOpen || windowWidth >= 1024 ? 0 : -280
         }}
-        className={`fixed lg:relative bg-white border-r border-slate-200 flex flex-col z-30 h-full transition-all duration-300 ease-in-out ${!isSidebarOpen && window.innerWidth < 1024 ? 'pointer-events-none' : ''}`}
+        className={`fixed lg:relative bg-white border-r border-slate-200 flex flex-col z-30 h-full transition-all duration-300 ease-in-out ${!isSidebarOpen && windowWidth < 1024 ? 'pointer-events-none' : ''}`}
       >
         <div className="p-6 flex items-center justify-between">
-          {(isSidebarOpen || window.innerWidth >= 1024) && (
+          {(isSidebarOpen || windowWidth >= 1024) && (
             <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap">
               <Logo size="sm" />
               <span className="font-bold text-xl text-slate-800">Netra HRMS</span>
@@ -95,7 +102,7 @@ export default function AdminDashboard() {
               key={item.id}
               onClick={() => {
                 setActiveView(item.id as View);
-                if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                if (windowWidth < 1024) setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                 activeView === item.id 
@@ -104,7 +111,7 @@ export default function AdminDashboard() {
               }`}
             >
               <item.icon className="w-5 h-5 min-w-[20px]" />
-              {(isSidebarOpen || window.innerWidth >= 1024) && <span className="font-medium whitespace-nowrap">{item.label}</span>}
+              {(isSidebarOpen || windowWidth >= 1024) && <span className="font-medium whitespace-nowrap">{item.label}</span>}
             </button>
           ))}
         </nav>
@@ -115,7 +122,7 @@ export default function AdminDashboard() {
             className="w-full flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-50 transition-all"
           >
             <LogOut className="w-5 h-5 min-w-[20px]" />
-            {(isSidebarOpen || window.innerWidth >= 1024) && <span className="font-medium">Logout</span>}
+            {(isSidebarOpen || windowWidth >= 1024) && <span className="font-medium">Logout</span>}
           </button>
         </div>
       </motion.aside>
