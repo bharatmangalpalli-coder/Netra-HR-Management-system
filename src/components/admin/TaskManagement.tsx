@@ -29,6 +29,7 @@ export default function TaskManagement() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [newComment, setNewComment] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   
   const [formData, setFormData] = useState({
     title: '',
@@ -73,10 +74,12 @@ export default function TaskManagement() {
     
     setLoading(true);
     try {
-      const employee = employees.find(emp => emp.employeeId === formData.assignedTo);
+      const empId = formData.assignedTo;
+      const employee = employees.find(emp => (emp.employeeId || emp.id) === empId);
       
       const newTask = {
         ...formData,
+        assignedTo: empId,
         assignedToName: employee?.name || 'Unknown',
         status: 'pending',
         comments: [],
@@ -142,6 +145,12 @@ export default function TaskManagement() {
     }
   };
 
+  const filteredTasks = tasks.filter(task => 
+    task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    task.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    task.assignedToName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       {/* Header Actions */}
@@ -151,6 +160,8 @@ export default function TaskManagement() {
           <input 
             type="text" 
             placeholder="Search tasks..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
           />
         </div>
@@ -167,10 +178,12 @@ export default function TaskManagement() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {loading ? (
           <div className="col-span-full py-12 text-center text-slate-400">Loading tasks...</div>
-        ) : tasks.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-400">No tasks assigned yet</div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="col-span-full py-12 text-center text-slate-400">
+            {searchTerm ? 'No tasks match your search' : 'No tasks assigned yet'}
+          </div>
         ) : (
-          tasks.map((task) => (
+          filteredTasks.map((task) => (
             <motion.div 
               layout
               key={task.id} 
@@ -388,7 +401,7 @@ export default function TaskManagement() {
                     >
                       <option value="">Select Employee</option>
                       {employees.map(emp => (
-                        <option key={emp.id} value={emp.employeeId}>{emp.name}</option>
+                        <option key={emp.id} value={emp.employeeId || emp.id}>{emp.name}</option>
                       ))}
                     </select>
                   </div>

@@ -10,12 +10,16 @@ import {
   AlertCircle,
   Edit2,
   Trash2,
-  X
+  X,
+  Calculator,
+  UserCheck,
+  UserX,
+  Clock
 } from 'lucide-react';
 import { collection, getDocs, addDoc, query, where, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Employee, SalaryRecord } from '../../types';
-import { formatCurrency } from '../../lib/utils';
+import { Employee, SalaryRecord, Attendance } from '../../types';
+import { formatCurrency, getMonthWorkingDays } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
@@ -30,6 +34,10 @@ export default function SalaryManagement() {
   const [editingRecord, setEditingRecord] = useState<SalaryRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({
+    workingDays: 22,
+    presentDays: 22,
+    overtimeHours: 0,
+    overtimePay: 0,
     bonus: 0,
     incentive: 0,
     pf: 0,
@@ -65,7 +73,7 @@ export default function SalaryManagement() {
     // Header
     doc.setFontSize(22);
     doc.setTextColor(37, 99, 235);
-    doc.text('HR Pro - Salary Slip', 105, 20, { align: 'center' });
+    doc.text('SalaryCalc - Salary Slip', 105, 20, { align: 'center' });
     
     doc.setFontSize(12);
     doc.setTextColor(100);
@@ -79,8 +87,16 @@ export default function SalaryManagement() {
     doc.setFont('helvetica', 'normal');
     doc.text(`Name: ${emp.name}`, 20, 60);
     doc.text(`Employee ID: ${emp.employeeId}`, 20, 70);
-    doc.text(`Role: ${emp.role}`, 20, 80);
+    doc.text(`Designation: ${emp.designation || 'N/A'}`, 20, 80);
     
+    // Attendance Info
+    doc.setFont('helvetica', 'bold');
+    doc.text('Attendance Summary', 120, 50);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Total Working Days: ${record.workingDays}`, 120, 60);
+    doc.text(`Present Days: ${record.presentDays}`, 120, 70);
+    doc.text(`Absent Days: ${record.absentDays}`, 120, 80);
+
     // Salary Details
     doc.setFont('helvetica', 'bold');
     doc.text('Earnings & Deductions', 20, 100);
@@ -90,10 +106,20 @@ export default function SalaryManagement() {
     let y = 115;
     
     // Earnings
-    doc.text('Base Salary:', 20, y);
+    doc.text('Monthly Fixed Salary:', 20, y);
     doc.text(formatCurrency(record.baseSalary), 150, y);
     y += 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Calculated Salary (Attendance Based):', 20, y);
+    doc.text(formatCurrency(record.calculatedSalary), 150, y);
+    doc.setFont('helvetica', 'normal');
+    y += 10;
     
+    doc.text('Overtime Pay:', 20, y);
+    doc.text(formatCurrency(record.overtimePay), 150, y);
+    y += 10;
+
     doc.text('Bonus:', 20, y);
     doc.text(formatCurrency(record.bonus), 150, y);
     y += 10;
@@ -127,44 +153,86 @@ export default function SalaryManagement() {
     doc.text('Net Salary Payable:', 20, y);
     doc.text(formatCurrency(record.netSalary), 150, y);
     
+    // Breakdown info
+    y += 20;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'italic');
+    doc.text(`Calculation Breakdown:`, 20, y);
+    y += 5;
+    doc.text(`Per Day Salary = ${formatCurrency(record.baseSalary)} / ${record.workingDays} = ${formatCurrency(record.perDaySalary)}`, 20, y);
+    y += 5;
+    doc.text(`Calculated Salary = ${formatCurrency(record.perDaySalary)} x ${record.presentDays} = ${formatCurrency(record.calculatedSalary)}`, 20, y);
+
     // Footer
     doc.setFontSize(10);
     doc.setFont('helvetica', 'italic');
-    doc.text('This is a computer generated document and does not require a signature.', 105, 200, { align: 'center' });
+    doc.text('This is a computer generated document and does not require a signature.', 105, 280, { align: 'center' });
     
     doc.save(`${emp.name}_Salary_Slip_${record.month}.pdf`);
     toast.success('Salary slip generated');
   };
 
   const handleGenerateAll = async () => {
-    toast.loading('Generating records...');
+    toast.loading('Processing attendance and generating records...');
     try {
+      const [year, month] = selectedMonth.split('-').map(Number);
+      const totalWorkingDays = getMonthWorkingDays(year, month);
+
+      // Fetch all attendance for this month
+      const attendanceSnap = await getDocs(query(
+        collection(db, 'attendance'),
+        where('date', '>=', `${selectedMonth}-01`),
+        where('date', '<=', `${selectedMonth}-31`)
+      ));
+      const allAttendance = attendanceSnap.docs.map(doc => doc.data() as Attendance);
+
       for (const emp of employees) {
+        const empId = emp.employeeId || emp.id;
+        if (!empId) continue;
+
         // Check if already generated
-        if (salaryRecords.some(r => r.employeeId === emp.employeeId)) continue;
+        if (salaryRecords.some(r => r.employeeId === empId)) continue;
         
+        // Count present days for this employee
+        const empAttendance = allAttendance.filter(a => a.employeeId === empId);
+        const presentDays = empAttendance.filter(a => a.status === 'present' || a.status === 'late').length;
+        const absentDays = totalWorkingDays - presentDays;
+
+        // Formula: Per Day Salary = Monthly Salary / Total Working Days
+        const monthlySalary = emp.monthlySalary || 0;
+        const perDaySalary = monthlySalary / totalWorkingDays;
+        
+        // Formula: Calculated Salary = Per Day Salary * Present Days
+        const calculatedSalary = presentDays === 0 ? 0 : perDaySalary * presentDays;
+
         const record = {
-          employeeId: emp.employeeId,
+          employeeId: empId,
           month: selectedMonth,
-          workingDays: 22, // Mock logic
-          leaveDays: 0,
-          baseSalary: emp.monthlySalary,
+          workingDays: totalWorkingDays,
+          presentDays: presentDays,
+          absentDays: absentDays < 0 ? 0 : absentDays,
+          perDaySalary: perDaySalary,
+          baseSalary: monthlySalary,
+          calculatedSalary: calculatedSalary,
+          overtimeHours: 0,
+          overtimePay: 0,
           bonus: 0,
           incentive: 0,
           pf: 0,
           esi: 0,
           professionalTax: 0,
           deduction: 0,
-          netSalary: emp.monthlySalary,
+          netSalary: calculatedSalary,
           generatedAt: new Date().toISOString()
         };
         await addDoc(collection(db, 'salary'), record);
       }
       toast.dismiss();
-      toast.success('Salary records generated for all employees');
+      toast.success('Salary records generated based on attendance');
       fetchData();
     } catch (error) {
       toast.dismiss();
+      console.error(error);
       toast.error('Failed to generate records');
     }
   };
@@ -172,12 +240,16 @@ export default function SalaryManagement() {
   const handleEdit = (record: SalaryRecord) => {
     setEditingRecord(record);
     setEditFormData({
-      bonus: record.bonus,
+      workingDays: record.workingDays || 22,
+      presentDays: record.presentDays || 0,
+      overtimeHours: record.overtimeHours || 0,
+      overtimePay: record.overtimePay || 0,
+      bonus: record.bonus || 0,
       incentive: record.incentive || 0,
       pf: record.pf || 0,
       esi: record.esi || 0,
       professionalTax: record.professionalTax || 0,
-      deduction: record.deduction
+      deduction: record.deduction || 0
     });
     setIsEditModalOpen(true);
   };
@@ -188,11 +260,22 @@ export default function SalaryManagement() {
 
     setLoading(true);
     try {
-      const totalEarnings = editingRecord.baseSalary + editFormData.bonus + editFormData.incentive;
+      const perDaySalary = editingRecord.baseSalary / editFormData.workingDays;
+      const calculatedSalary = editFormData.presentDays === 0 ? 0 : perDaySalary * editFormData.presentDays;
+      const absentDays = editFormData.workingDays - editFormData.presentDays;
+
+      const totalEarnings = calculatedSalary + editFormData.overtimePay + editFormData.bonus + editFormData.incentive;
       const totalDeductions = editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction;
       const netSalary = totalEarnings - totalDeductions;
 
       await updateDoc(doc(db, 'salary', editingRecord.id), {
+        workingDays: editFormData.workingDays,
+        presentDays: editFormData.presentDays,
+        absentDays: absentDays < 0 ? 0 : absentDays,
+        perDaySalary,
+        calculatedSalary,
+        overtimeHours: editFormData.overtimeHours,
+        overtimePay: editFormData.overtimePay,
         bonus: editFormData.bonus,
         incentive: editFormData.incentive,
         pf: editFormData.pf,
@@ -235,62 +318,95 @@ export default function SalaryManagement() {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-slate-500 text-sm font-medium">Total Payroll</p>
-          <p className="text-2xl font-bold text-slate-800 mt-1">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
+        <div className="bg-white p-4 lg:p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 lg:gap-3 mb-1 lg:mb-2">
+            <div className="p-1.5 lg:p-2 bg-blue-50 rounded-lg">
+              <IndianRupee className="w-4 h-4 lg:w-5 lg:h-5 text-blue-600" />
+            </div>
+            <p className="text-slate-500 text-[10px] lg:text-sm font-medium">Total Payroll</p>
+          </div>
+          <p className="text-sm lg:text-2xl font-bold text-slate-800 truncate">
             {formatCurrency(salaryRecords.reduce((acc, r) => acc + r.netSalary, 0))}
           </p>
         </div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-slate-500 text-sm font-medium">Processed Employees</p>
-          <p className="text-2xl font-bold text-slate-800 mt-1">{salaryRecords.length} / {employees.length}</p>
+        <div className="bg-white p-4 lg:p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 lg:gap-3 mb-1 lg:mb-2">
+            <div className="p-1.5 lg:p-2 bg-emerald-50 rounded-lg">
+              <UserCheck className="w-4 h-4 lg:w-5 lg:h-5 text-emerald-600" />
+            </div>
+            <p className="text-slate-500 text-[10px] lg:text-sm font-medium">Processed</p>
+          </div>
+          <p className="text-sm lg:text-2xl font-bold text-slate-800">{salaryRecords.length} / {employees.length}</p>
         </div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-slate-500 text-sm font-medium">Pending Processing</p>
-          <p className="text-2xl font-bold text-amber-600 mt-1">{employees.length - salaryRecords.length}</p>
+        <div className="bg-white p-4 lg:p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 lg:gap-3 mb-1 lg:mb-2">
+            <div className="p-1.5 lg:p-2 bg-amber-50 rounded-lg">
+              <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5 text-amber-600" />
+            </div>
+            <p className="text-slate-500 text-[10px] lg:text-sm font-medium">Pending</p>
+          </div>
+          <p className="text-sm lg:text-2xl font-bold text-amber-600">{employees.length - salaryRecords.length}</p>
+        </div>
+        <div className="bg-white p-4 lg:p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 lg:gap-3 mb-1 lg:mb-2">
+            <div className="p-1.5 lg:p-2 bg-indigo-50 rounded-lg">
+              <Clock className="w-4 h-4 lg:w-5 lg:h-5 text-indigo-600" />
+            </div>
+            <p className="text-slate-500 text-[10px] lg:text-sm font-medium">Avg. Attendance</p>
+          </div>
+          <p className="text-sm lg:text-2xl font-bold text-slate-800">
+            {salaryRecords.length > 0 
+              ? Math.round((salaryRecords.reduce((acc, r) => acc + r.presentDays, 0) / (salaryRecords.length * (salaryRecords[0]?.workingDays || 22))) * 100)
+              : 0}%
+          </p>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <div className="relative flex-1 md:w-48">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-4 w-full lg:w-auto">
+          <div className="relative flex-1 lg:w-48">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
               type="month" 
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
             />
           </div>
         </div>
-        <button 
-          onClick={handleGenerateAll}
-          className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 w-full md:w-auto justify-center"
-        >
-          <Plus className="w-5 h-5" />
-          Generate All Records
-        </button>
+        <div className="flex items-center gap-3 w-full lg:w-auto">
+          <button 
+            onClick={handleGenerateAll}
+            className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 w-full lg:w-auto justify-center active:scale-95"
+          >
+            <Calculator className="w-5 h-5" />
+            Calculate Salaries
+          </button>
+        </div>
       </div>
 
       {/* Salary List */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4 font-semibold">Employee</th>
+                <th className="px-6 py-4 font-semibold">Attendance</th>
                 <th className="px-6 py-4 font-semibold">Base Salary</th>
-                <th className="px-6 py-4 font-semibold">Bonus/Deduct</th>
-                <th className="px-6 py-4 font-semibold">Net Salary</th>
+                <th className="px-6 py-4 font-semibold">Calculated</th>
+                <th className="px-6 py-4 font-semibold">Net Payable</th>
                 <th className="px-6 py-4 font-semibold">Status</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {employees.map((emp) => {
-                const record = salaryRecords.find(r => r.employeeId === emp.employeeId);
+                const empId = emp.employeeId || emp.id;
+                const record = salaryRecords.find(r => r.employeeId === empId);
                 return (
                   <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
@@ -300,20 +416,32 @@ export default function SalaryManagement() {
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-slate-800">{emp.name}</p>
-                          <p className="text-xs text-slate-500">{emp.employeeId}</p>
+                          <p className="text-xs text-slate-500">{empId}</p>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {record ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-emerald-600 font-bold">P: {record.presentDays}</span>
+                            <span className="text-red-500 font-bold">A: {record.absentDays}</span>
+                          </div>
+                          <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-emerald-500" 
+                              style={{ width: `${(record.presentDays / record.workingDays) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : '--'}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">{formatCurrency(emp.monthlySalary)}</td>
                     <td className="px-6 py-4">
                       {record ? (
-                        <div className="text-[10px] space-y-0.5">
-                          <p className="text-emerald-600">Bonus: +{formatCurrency(record.bonus)}</p>
-                          <p className="text-emerald-600">Inc: +{formatCurrency(record.incentive || 0)}</p>
-                          <p className="text-red-600">PF: -{formatCurrency(record.pf || 0)}</p>
-                          <p className="text-red-600">ESI: -{formatCurrency(record.esi || 0)}</p>
-                          <p className="text-red-600">PT: -{formatCurrency(record.professionalTax || 0)}</p>
-                          <p className="text-red-600">Other: -{formatCurrency(record.deduction)}</p>
+                        <div className="text-xs space-y-0.5">
+                          <p className="text-slate-500">Per Day: {formatCurrency(record.perDaySalary)}</p>
+                          <p className="font-semibold text-slate-700">{formatCurrency(record.calculatedSalary)}</p>
                         </div>
                       ) : '--'}
                     </td>
@@ -362,7 +490,88 @@ export default function SalaryManagement() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Card View */}
+        <div className="lg:hidden divide-y divide-slate-100">
+          {employees.map((emp) => {
+            const empId = emp.employeeId || emp.id;
+            const record = salaryRecords.find(r => r.employeeId === empId);
+            return (
+              <div key={emp.id} className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold border border-slate-200">
+                      {emp.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{emp.name}</p>
+                      <p className="text-[10px] text-slate-500">{empId}</p>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                    record ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    {record ? 'Processed' : 'Pending'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-50 p-2 rounded-xl">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-tighter mb-0.5">Base Salary</p>
+                    <p className="text-xs text-slate-800 font-bold">{formatCurrency(emp.monthlySalary)}</p>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded-xl">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-tighter mb-0.5">Net Payable</p>
+                    <p className="text-xs text-slate-800 font-bold">{record ? formatCurrency(record.netSalary) : '--'}</p>
+                  </div>
+                </div>
+
+                {record && (
+                  <div className="bg-slate-50 p-3 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-slate-500">Attendance</span>
+                      <span className="font-bold text-slate-700">P: {record.presentDays} | A: {record.absentDays}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500" 
+                        style={{ width: `${(record.presentDays / record.workingDays) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-50">
+                  {record && (
+                    <>
+                      <button 
+                        onClick={() => handleEdit(record)}
+                        className="p-2 bg-slate-50 text-slate-600 rounded-lg active:scale-90 transition-all"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => confirmDelete(record.id)}
+                        className="p-2 bg-red-50 text-red-500 rounded-lg active:scale-90 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => generateSalarySlip(emp, record)}
+                        className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg font-bold text-[10px] active:scale-95 transition-all"
+                      >
+                        <Download className="w-3 h-3" />
+                        Slip
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
+
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {isDeleteModalOpen && (
@@ -406,7 +615,7 @@ export default function SalaryManagement() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white">
                 <h3 className="text-xl font-bold">Edit Salary Record</h3>
@@ -414,46 +623,120 @@ export default function SalaryManagement() {
                   <X className="w-6 h-6" />
                 </button>
               </div>
-              <form onSubmit={handleUpdateRecord} className="p-8 space-y-4 max-h-[70vh] overflow-y-auto">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-slate-700 block mb-1">Bonus (INR)</label>
-                    <input 
-                      type="number" 
-                      value={editFormData.bonus}
-                      onChange={(e) => setEditFormData({...editFormData, bonus: Number(e.target.value)})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+              <form onSubmit={handleUpdateRecord} className="p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Attendance Section */}
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                      <UserCheck className="w-5 h-5 text-blue-600" />
+                      Attendance Details
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">Working Days</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.workingDays || 0}
+                          onChange={(e) => setEditFormData({...editFormData, workingDays: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">Present Days</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.presentDays || 0}
+                          onChange={(e) => setEditFormData({...editFormData, presentDays: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700 block mb-1">Incentive (INR)</label>
-                    <input 
-                      type="number" 
-                      value={editFormData.incentive}
-                      onChange={(e) => setEditFormData({...editFormData, incentive: Number(e.target.value)})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+
+                  {/* Overtime Section */}
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-indigo-600" />
+                      Overtime & Bonus
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">OT Hours</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.overtimeHours || 0}
+                          onChange={(e) => setEditFormData({...editFormData, overtimeHours: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">OT Pay (INR)</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.overtimePay || 0}
+                          onChange={(e) => setEditFormData({...editFormData, overtimePay: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-slate-700 block mb-1">PF (INR)</label>
-                    <input 
-                      type="number" 
-                      value={editFormData.pf}
-                      onChange={(e) => setEditFormData({...editFormData, pf: Number(e.target.value)})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Earnings Section */}
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-emerald-600" />
+                      Additional Earnings
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">Bonus (INR)</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.bonus || 0}
+                          onChange={(e) => setEditFormData({...editFormData, bonus: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">Incentive (INR)</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.incentive || 0}
+                          onChange={(e) => setEditFormData({...editFormData, incentive: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700 block mb-1">ESI (INR)</label>
-                    <input 
-                      type="number" 
-                      value={editFormData.esi}
-                      onChange={(e) => setEditFormData({...editFormData, esi: Number(e.target.value)})}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+
+                  {/* Deductions Section */}
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 text-red-600" />
+                      Deductions
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">PF (INR)</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.pf || 0}
+                          onChange={(e) => setEditFormData({...editFormData, pf: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 block mb-1">ESI (INR)</label>
+                        <input 
+                          type="number" 
+                          value={editFormData.esi || 0}
+                          onChange={(e) => setEditFormData({...editFormData, esi: Number(e.target.value)})}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -462,7 +745,7 @@ export default function SalaryManagement() {
                     <label className="text-sm font-medium text-slate-700 block mb-1">Prof. Tax (INR)</label>
                     <input 
                       type="number" 
-                      value={editFormData.professionalTax}
+                      value={editFormData.professionalTax || 0}
                       onChange={(e) => setEditFormData({...editFormData, professionalTax: Number(e.target.value)})}
                       className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                     />
@@ -471,29 +754,41 @@ export default function SalaryManagement() {
                     <label className="text-sm font-medium text-slate-700 block mb-1">Other Deductions (INR)</label>
                     <input 
                       type="number" 
-                      value={editFormData.deduction}
+                      value={editFormData.deduction || 0}
                       onChange={(e) => setEditFormData({...editFormData, deduction: Number(e.target.value)})}
                       className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                 </div>
                 
-                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-600">Base Salary:</span>
-                    <span className="font-semibold">{formatCurrency(editingRecord?.baseSalary || 0)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-emerald-600">Total Earnings (+):</span>
-                    <span className="font-semibold text-emerald-600">+{formatCurrency((editingRecord?.baseSalary || 0) + editFormData.bonus + editFormData.incentive)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs mb-3 pb-3 border-b border-blue-200">
-                    <span className="text-red-600">Total Deductions (-):</span>
-                    <span className="font-semibold text-red-600">-{formatCurrency(editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction)}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold text-blue-700">
-                    <span>Net Payable:</span>
-                    <span>{formatCurrency(((editingRecord?.baseSalary || 0) + editFormData.bonus + editFormData.incentive) - (editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction))}</span>
+                {/* Breakdown Summary */}
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200">
+                  <h4 className="text-sm font-bold text-slate-800 mb-4 uppercase tracking-wider">Salary Breakdown</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Fixed Monthly Salary:</span>
+                      <span className="font-semibold">{formatCurrency(editingRecord?.baseSalary || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Per Day Salary ({formatCurrency(editingRecord?.baseSalary || 0)} / {editFormData.workingDays}):</span>
+                      <span className="font-semibold">{formatCurrency((editingRecord?.baseSalary || 0) / editFormData.workingDays)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm p-2 bg-blue-50 rounded-lg border border-blue-100">
+                      <span className="text-blue-700 font-bold">Calculated Salary ({editFormData.presentDays} days):</span>
+                      <span className="font-bold text-blue-700">{formatCurrency(((editingRecord?.baseSalary || 0) / editFormData.workingDays) * editFormData.presentDays)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-emerald-600">Additional Earnings (+):</span>
+                      <span className="font-semibold text-emerald-600">+{formatCurrency(editFormData.overtimePay + editFormData.bonus + editFormData.incentive)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm pb-3 border-b border-slate-200">
+                      <span className="text-red-600">Total Deductions (-):</span>
+                      <span className="font-semibold text-red-600">-{formatCurrency(editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction)}</span>
+                    </div>
+                    <div className="flex justify-between text-xl font-bold text-slate-900 pt-2">
+                      <span>Net Payable:</span>
+                      <span>{formatCurrency((((editingRecord?.baseSalary || 0) / editFormData.workingDays) * editFormData.presentDays) + editFormData.overtimePay + editFormData.bonus + editFormData.incentive - (editFormData.pf + editFormData.esi + editFormData.professionalTax + editFormData.deduction))}</span>
+                    </div>
                   </div>
                 </div>
 

@@ -15,6 +15,30 @@ import Logo from '../ui/Logo';
 
 export default function Login() {
   const [isRegistering, setIsRegistering] = useState(false);
+  const [branding, setBranding] = useState({
+    companyName: 'Netra Consultancy & E-Services',
+    tagline: 'Vision for Your Success'
+  });
+
+  React.useEffect(() => {
+    fetchBranding();
+  }, []);
+
+  const fetchBranding = async () => {
+    if (!db) return;
+    try {
+      const settingsDoc = await getDoc(doc(db, 'settings', 'branding'));
+      if (settingsDoc.exists()) {
+        const data = settingsDoc.data();
+        setBranding({
+          companyName: data.companyName || 'Netra Consultancy & E-Services',
+          tagline: data.tagline || 'Vision for Your Success'
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching branding:", error);
+    }
+  };
   const [method, setMethod] = useState<'phone' | 'email'>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -140,14 +164,18 @@ export default function Login() {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full bg-white rounded-3xl shadow-2xl shadow-slate-200 overflow-hidden"
       >
-        <div className="bg-blue-600 p-8 text-white text-center">
-          <div className="mb-4 flex justify-center">
-            <Logo size="lg" className="shadow-lg shadow-blue-900/20" />
+        <div className="bg-slate-900 p-8 text-white text-center relative overflow-hidden">
+          {/* Background decoration */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/40 via-transparent to-transparent"></div>
+          
+          <div className="mb-4 flex justify-center relative z-10">
+            <Logo size="lg" className="shadow-2xl shadow-blue-500/20" />
           </div>
-          <h1 className="text-2xl font-bold">HR Pro</h1>
-          <p className="text-blue-100 mt-1">
-            {isForgotPassword ? 'Reset your password' : isRegistering ? 'Create your account' : 'Sign in to your workspace'}
-          </p>
+          <div className="relative z-10">
+            <h1 className="text-2xl font-bold tracking-tight text-white">{branding.companyName}</h1>
+            <p className="text-amber-400 font-serif italic text-sm mt-1 tracking-wide">{branding.tagline}</p>
+            <div className="h-[1px] w-24 bg-gradient-to-r from-transparent via-amber-400/50 to-transparent mx-auto mt-3"></div>
+          </div>
         </div>
 
         <div className="p-8">

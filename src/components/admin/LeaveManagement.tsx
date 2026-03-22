@@ -29,12 +29,14 @@ export default function LeaveManagement() {
     try {
       let q;
       if (filter === 'all') {
-        q = query(collection(db, 'leaves'), orderBy('appliedAt', 'desc'));
+        q = query(collection(db, 'leaves'));
       } else {
-        q = query(collection(db, 'leaves'), where('status', '==', filter), orderBy('appliedAt', 'desc'));
+        q = query(collection(db, 'leaves'), where('status', '==', filter));
       }
       const querySnapshot = await getDocs(q);
-      const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as LeaveRequest));
+      const list = querySnapshot.docs
+        .map(doc => ({ id: doc.id, ...(doc.data() as any) } as LeaveRequest))
+        .sort((a, b) => b.appliedAt.localeCompare(a.appliedAt));
       setLeaves(list);
     } catch (error) {
       console.error("Error fetching leaves:", error);

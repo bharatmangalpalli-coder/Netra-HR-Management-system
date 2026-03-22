@@ -133,17 +133,17 @@ export default function EmployeeManagement() {
 
   const handleEdit = (emp: Employee) => {
     setFormData({
-      name: emp.name,
+      name: emp.name || '',
       email: (emp as any).email || '',
       password: 'password123',
       mobile: emp.mobile || '',
       address: emp.address || '',
       aadhaar: emp.aadhaar || '',
-      joiningDate: emp.joiningDate,
+      joiningDate: emp.joiningDate || new Date().toISOString().split('T')[0],
       exitDate: emp.exitDate || '',
       designation: emp.designation || '',
-      monthlySalary: emp.monthlySalary,
-      role: emp.role,
+      monthlySalary: emp.monthlySalary || 0,
+      role: emp.role || 'EMPLOYEE',
       shiftStart: emp.shiftStart || '09:00',
       shiftEnd: emp.shiftEnd || '18:00',
       isFlexibleShift: emp.isFlexibleShift || false
@@ -174,10 +174,11 @@ export default function EmployeeManagement() {
     setIsDeleteModalOpen(true);
   };
 
-  const filteredEmployees = employees.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEmployees = employees.filter(emp => {
+    const empId = emp.employeeId || emp.id;
+    return emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           empId.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   const handleExport = () => {
     if (employees.length === 0) {
@@ -246,9 +247,10 @@ export default function EmployeeManagement() {
         </div>
       </div>
 
-      {/* Employee Table */}
+      {/* Employee List/Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
@@ -265,11 +267,11 @@ export default function EmployeeManagement() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">Loading employees...</td>
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400">Loading employees...</td>
                 </tr>
               ) : filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">No employees found</td>
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400">No employees found</td>
                 </tr>
               ) : (
                 filteredEmployees.map((emp) => (
@@ -281,7 +283,7 @@ export default function EmployeeManagement() {
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-slate-800">{emp.name}</p>
-                          <p className="text-xs text-slate-500">{emp.employeeId}</p>
+                          <p className="text-xs text-slate-500">{emp.employeeId || emp.id}</p>
                         </div>
                       </div>
                     </td>
@@ -318,7 +320,7 @@ export default function EmployeeManagement() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
-                          onClick={() => setSelectedEmployeeForCalendar({ id: emp.employeeId, name: emp.name })}
+                          onClick={() => setSelectedEmployeeForCalendar({ id: emp.employeeId || emp.id, name: emp.name })}
                           className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
                           title="View Attendance Calendar"
                         >
@@ -344,36 +346,112 @@ export default function EmployeeManagement() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Card View */}
+        <div className="lg:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="p-8 text-center text-slate-400">Loading employees...</div>
+          ) : filteredEmployees.length === 0 ? (
+            <div className="p-8 text-center text-slate-400">No employees found</div>
+          ) : (
+            filteredEmployees.map((emp) => (
+              <div key={emp.id} className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold border border-blue-100">
+                      {emp.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{emp.name}</p>
+                      <p className="text-[10px] text-slate-500">{emp.employeeId || emp.id}</p>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                    emp.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {emp.status}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-[11px]">
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Designation</p>
+                    <p className="text-slate-700 font-medium">{emp.designation || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Salary</p>
+                    <p className="text-slate-700 font-medium">{formatCurrency(emp.monthlySalary)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Contact</p>
+                    <p className="text-slate-700 font-medium">{emp.mobile}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Shift</p>
+                    {emp.isFlexibleShift ? (
+                      <span className="text-indigo-600 font-bold">Flexible</span>
+                    ) : (
+                      <p className="text-slate-700 font-medium">{emp.shiftStart} - {emp.shiftEnd}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-50">
+                  <button 
+                    onClick={() => setSelectedEmployeeForCalendar({ id: emp.employeeId || emp.id, name: emp.name })}
+                    className="flex-1 flex items-center justify-center gap-2 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold active:scale-95 transition-all"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Calendar
+                  </button>
+                  <button 
+                    onClick={() => handleEdit(emp)}
+                    className="flex-1 flex items-center justify-center gap-2 py-2 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold active:scale-95 transition-all"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    Edit
+                  </button>
+                  <button 
+                    onClick={() => confirmDelete(emp.id)}
+                    className="p-2 bg-red-50 text-red-600 rounded-xl active:scale-95 transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {isDeleteModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-8 text-center"
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-6 text-center"
             >
-              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="w-8 h-8" />
+              <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Employee?</h3>
-              <p className="text-slate-500 text-sm mb-8">This action cannot be undone. All data associated with this employee will be permanently removed.</p>
+              <h3 className="text-lg font-bold text-slate-800 mb-2">Delete Employee?</h3>
+              <p className="text-slate-500 text-xs mb-6 px-4">This action cannot be undone. All data will be permanently removed.</p>
               <div className="flex gap-3">
                 <button 
                   onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 px-6 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                  className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-50 rounded-2xl transition-all"
                 >
                   Cancel
                 </button>
                 <button 
                   onClick={handleDelete}
                   disabled={loading}
-                  className="flex-1 px-6 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
+                  className="flex-1 py-3 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
                 >
-                  {loading ? 'Deleting...' : 'Delete'}
+                  {loading ? '...' : 'Delete'}
                 </button>
               </div>
             </motion.div>
@@ -384,164 +462,171 @@ export default function EmployeeManagement() {
       {/* Add Employee Modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-end lg:items-center justify-center bg-slate-900/40 backdrop-blur-sm">
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="bg-white rounded-t-[2.5rem] lg:rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white">
-                <h3 className="text-xl font-bold">{isEditMode ? 'Edit Employee' : 'Add New Employee'}</h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-                  <X className="w-6 h-6" />
+              <div className="sticky top-0 p-6 border-b border-slate-100 flex items-center justify-between bg-white z-10">
+                <h3 className="text-xl font-bold text-slate-800">{isEditMode ? 'Edit Employee' : 'Add New Employee'}</h3>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X className="w-6 h-6 text-slate-400" />
                 </button>
               </div>
-              <form onSubmit={handleAddEmployee} className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Full Name</label>
-                  <input 
-                    required
-                    type="text" 
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="John Doe"
-                  />
+              <form onSubmit={handleAddEmployee} className="p-6 lg:p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Full Name</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={formData.name || ''}
+                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                      className="input-field"
+                      placeholder="John Doe"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Email Address</label>
+                    <input 
+                      required
+                      type="email" 
+                      value={formData.email || ''}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      className="input-field"
+                      placeholder="john@company.com"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Mobile Number</label>
+                    <input 
+                      required
+                      type="tel" 
+                      value={formData.mobile || ''}
+                      onChange={(e) => setFormData({...formData, mobile: e.target.value})}
+                      className="input-field"
+                      placeholder="+91 98765 43210"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Aadhaar Number</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={formData.aadhaar || ''}
+                      onChange={(e) => setFormData({...formData, aadhaar: e.target.value})}
+                      className="input-field"
+                      placeholder="0000 0000 0000"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Designation</label>
+                    <input 
+                      type="text" 
+                      value={formData.designation || ''}
+                      onChange={(e) => setFormData({...formData, designation: e.target.value})}
+                      className="input-field"
+                      placeholder="Software Engineer"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Monthly Salary (INR)</label>
+                    <input 
+                      required
+                      type="number" 
+                      value={formData.monthlySalary || 0}
+                      onChange={(e) => setFormData({...formData, monthlySalary: Number(e.target.value)})}
+                      className="input-field"
+                      placeholder="45000"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Joining Date</label>
+                    <input 
+                      required
+                      type="date" 
+                      value={formData.joiningDate || ''}
+                      onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
+                      className="input-field"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Exit Date (Optional)</label>
+                    <input 
+                      type="date" 
+                      value={formData.exitDate || ''}
+                      onChange={(e) => setFormData({...formData, exitDate: e.target.value})}
+                      className="input-field"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Email Address</label>
-                  <input 
-                    required
-                    type="email" 
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="john@company.com"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Mobile Number</label>
-                  <input 
-                    required
-                    type="tel" 
-                    value={formData.mobile}
-                    onChange={(e) => setFormData({...formData, mobile: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="+91 98765 43210"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Aadhaar Number</label>
-                  <input 
-                    required
-                    type="text" 
-                    value={formData.aadhaar}
-                    onChange={(e) => setFormData({...formData, aadhaar: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="0000 0000 0000"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Designation</label>
-                  <input 
-                    type="text" 
-                    value={formData.designation}
-                    onChange={(e) => setFormData({...formData, designation: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="Software Engineer"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Monthly Salary (INR)</label>
-                  <input 
-                    required
-                    type="number" 
-                    value={formData.monthlySalary}
-                    onChange={(e) => setFormData({...formData, monthlySalary: Number(e.target.value)})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="45000"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Joining Date</label>
-                  <input 
-                    required
-                    type="date" 
-                    value={formData.joiningDate}
-                    onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Exit Date (Optional)</label>
-                  <input 
-                    type="date" 
-                    value={formData.exitDate}
-                    onChange={(e) => setFormData({...formData, exitDate: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-                <div className="md:col-span-2 space-y-3">
-                  <div className="flex items-center gap-3">
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                     <input 
                       type="checkbox" 
                       id="isFlexibleShift"
                       checked={formData.isFlexibleShift}
                       onChange={(e) => setFormData({...formData, isFlexibleShift: e.target.checked})}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      className="w-5 h-5 text-blue-600 rounded-lg focus:ring-blue-500 border-slate-300"
                     />
-                    <label htmlFor="isFlexibleShift" className="text-sm font-medium text-slate-700">Flexible Shift (No fixed timings)</label>
+                    <label htmlFor="isFlexibleShift" className="text-sm font-bold text-slate-700">Flexible Shift (No fixed timings)</label>
                   </div>
+
+                  {!formData.isFlexibleShift && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Start Time</label>
+                        <input 
+                          required
+                          type="time" 
+                          value={formData.shiftStart || '09:00'}
+                          onChange={(e) => setFormData({...formData, shiftStart: e.target.value})}
+                          className="input-field"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">End Time</label>
+                        <input 
+                          required
+                          type="time" 
+                          value={formData.shiftEnd || '18:00'}
+                          onChange={(e) => setFormData({...formData, shiftEnd: e.target.value})}
+                          className="input-field"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {!formData.isFlexibleShift && (
-                  <>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium text-slate-700">Shift Start Time</label>
-                      <input 
-                        required
-                        type="time" 
-                        value={formData.shiftStart}
-                        onChange={(e) => setFormData({...formData, shiftStart: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium text-slate-700">Shift End Time</label>
-                      <input 
-                        required
-                        type="time" 
-                        value={formData.shiftEnd}
-                        onChange={(e) => setFormData({...formData, shiftEnd: e.target.value})}
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                  </>
-                )}
-                <div className="md:col-span-2 space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Address</label>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Address</label>
                   <textarea 
                     required
-                    value={formData.address}
+                    value={formData.address || ''}
                     onChange={(e) => setFormData({...formData, address: e.target.value})}
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-24"
+                    className="input-field h-24 resize-none"
                     placeholder="Full residential address..."
                   />
                 </div>
-                <div className="md:col-span-2 flex justify-end gap-3 mt-4">
+
+                <div className="flex flex-col lg:flex-row justify-end gap-3 pt-4">
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-6 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+                    className="w-full lg:w-auto px-8 py-4 text-slate-600 font-bold hover:bg-slate-50 rounded-2xl transition-all"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit"
                     disabled={loading}
-                    className="px-8 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
+                    className="btn btn-primary w-full lg:w-auto"
                   >
-                    {loading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update Employee' : 'Save Employee')}
+                    {loading ? 'Saving...' : (isEditMode ? 'Update Employee' : 'Save Employee')}
                   </button>
                 </div>
               </form>

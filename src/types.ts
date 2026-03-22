@@ -4,6 +4,7 @@ export interface Employee {
   id: string;
   employeeId: string;
   name: string;
+  email?: string;
   mobile?: string;
   address?: string;
   aadhaar?: string;
@@ -34,6 +35,8 @@ export interface Attendance {
   };
   selfieUrl?: string;
   outSelfieUrl?: string;
+  breakInSelfieUrl?: string;
+  breakOutSelfieUrl?: string;
   status: 'present' | 'absent' | 'late';
 }
 
@@ -75,8 +78,13 @@ export interface SalaryRecord {
   employeeId: string;
   month: string; // YYYY-MM
   workingDays: number;
-  leaveDays: number;
-  baseSalary: number;
+  presentDays: number;
+  absentDays: number;
+  perDaySalary: number;
+  baseSalary: number; // Monthly fixed salary
+  calculatedSalary: number; // baseSalary / workingDays * presentDays
+  overtimeHours: number;
+  overtimePay: number;
   bonus: number;
   incentive: number;
   pf: number;

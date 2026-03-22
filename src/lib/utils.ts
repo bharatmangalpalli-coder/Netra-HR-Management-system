@@ -15,3 +15,19 @@ export function formatCurrency(amount: number) {
 export function getTodayDate() {
   return new Date().toISOString().split('T')[0];
 }
+
+export function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+export function getMonthWorkingDays(year: number, month: number) {
+  let workingDays = 0;
+  const daysInMonth = getDaysInMonth(year, month);
+  for (let i = 1; i <= daysInMonth; i++) {
+    const day = new Date(year, month - 1, i).getDay();
+    if (day !== 0) { // Exclude Sundays
+      workingDays++;
+    }
+  }
+  return workingDays;
+}

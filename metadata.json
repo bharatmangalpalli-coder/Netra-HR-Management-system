@@ -1,6 +1,6 @@
 {
-  "name": "HR Pro - Small Office Management System",
-  "description": "A comprehensive HR management system featuring an Admin Dashboard for office management and a mobile-responsive Employee Portal for attendance, tasks, and leave requests.",
+  "name": "SalaryCalc - HRMS Salary System",
+  "description": "An attendance-based HRMS salary calculation system with automated payroll processing, salary slip generation, and attendance tracking.",
   "requestFramePermissions": [
     "geolocation",
     "camera"

@@ -51,33 +51,52 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 overflow-hidden relative">
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-20 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <motion.aside 
         initial={false}
-        animate={{ width: isSidebarOpen ? 280 : 80 }}
-        className="bg-white border-r border-slate-200 flex flex-col z-20"
+        animate={{ 
+          width: isSidebarOpen ? 280 : (window.innerWidth < 1024 ? 0 : 80),
+          x: isSidebarOpen || window.innerWidth >= 1024 ? 0 : -280
+        }}
+        className={`fixed lg:relative bg-white border-r border-slate-200 flex flex-col z-30 h-full transition-all duration-300 ease-in-out ${!isSidebarOpen && window.innerWidth < 1024 ? 'pointer-events-none' : ''}`}
       >
         <div className="p-6 flex items-center justify-between">
-          {isSidebarOpen && (
-            <div className="flex items-center gap-2">
+          {(isSidebarOpen || window.innerWidth >= 1024) && (
+            <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap">
               <Logo size="sm" />
-              <span className="font-bold text-xl text-slate-800">HR Pro</span>
+              <span className="font-bold text-xl text-slate-800">Netra HRMS</span>
             </div>
           )}
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 hover:bg-slate-100 rounded-lg text-slate-500"
+            className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 lg:hidden"
           >
-            {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-4">
+        <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
           {menuItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveView(item.id as View)}
+              onClick={() => {
+                setActiveView(item.id as View);
+                if (window.innerWidth < 1024) setIsSidebarOpen(false);
+              }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                 activeView === item.id 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
@@ -85,7 +104,7 @@ export default function AdminDashboard() {
               }`}
             >
               <item.icon className="w-5 h-5 min-w-[20px]" />
-              {isSidebarOpen && <span className="font-medium">{item.label}</span>}
+              {(isSidebarOpen || window.innerWidth >= 1024) && <span className="font-medium whitespace-nowrap">{item.label}</span>}
             </button>
           ))}
         </nav>
@@ -96,30 +115,39 @@ export default function AdminDashboard() {
             className="w-full flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-50 transition-all"
           >
             <LogOut className="w-5 h-5 min-w-[20px]" />
-            {isSidebarOpen && <span className="font-medium">Logout</span>}
+            {(isSidebarOpen || window.innerWidth >= 1024) && <span className="font-medium">Logout</span>}
           </button>
         </div>
       </motion.aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden w-full">
         {/* Header */}
-        <header className="h-16 bg-white border-bottom border-slate-200 px-8 flex items-center justify-between shrink-0">
-          <h2 className="text-xl font-semibold text-slate-800 capitalize">
-            {activeView.replace('-', ' ')}
-          </h2>
+        <header className="h-16 bg-white border-b border-slate-200 px-4 lg:px-8 flex items-center justify-between shrink-0 sticky top-0 z-10">
           <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 lg:hidden"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            <h2 className="text-lg lg:text-xl font-bold text-slate-800 capitalize truncate">
+              {activeView.replace('-', ' ')}
+            </h2>
+          </div>
+          
+          <div className="flex items-center gap-2 lg:gap-4">
             <button className="p-2 text-slate-400 hover:text-slate-600 relative">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </button>
-            <div className="h-8 w-[1px] bg-slate-200 mx-2"></div>
-            <div className="flex items-center gap-3">
+            <div className="h-8 w-[1px] bg-slate-200 mx-1 lg:mx-2"></div>
+            <div className="flex items-center gap-2 lg:gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-semibold text-slate-800">Admin User</p>
-                <p className="text-xs text-slate-500">Office Manager</p>
+                <p className="text-sm font-bold text-slate-800">Admin</p>
+                <p className="text-[10px] text-slate-500">Manager</p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-slate-200 border-2 border-white shadow-sm overflow-hidden">
+              <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-full bg-slate-200 border-2 border-white shadow-sm overflow-hidden shrink-0">
                 <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Admin" alt="Avatar" />
               </div>
             </div>
@@ -127,7 +155,7 @@ export default function AdminDashboard() {
         </header>
 
         {/* View Content */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8 pb-24 lg:pb-8">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeView}

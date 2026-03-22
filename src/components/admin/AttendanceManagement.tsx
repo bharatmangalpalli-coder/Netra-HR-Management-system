@@ -40,11 +40,12 @@ export default function AttendanceManagement() {
     try {
       const q = query(
         collection(db, 'attendance'), 
-        where('date', '==', selectedDate),
-        orderBy('inTime', 'desc')
+        where('date', '==', selectedDate)
       );
       const querySnapshot = await getDocs(q);
-      const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Attendance));
+      const list = querySnapshot.docs
+        .map(doc => ({ id: doc.id, ...(doc.data() as any) } as Attendance))
+        .sort((a, b) => (b.inTime || '').localeCompare(a.inTime || ''));
       setAttendance(list);
     } catch (error) {
       console.error("Error fetching attendance:", error);
@@ -136,46 +137,47 @@ export default function AttendanceManagement() {
     <div className="space-y-6">
       {/* Filters */}
       <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-        <p className="text-sm text-blue-700 leading-relaxed">
+        <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+        <p className="text-[11px] lg:text-sm text-blue-700 leading-relaxed">
           <strong>Data Protection Policy:</strong> Attendance records less than 30 days old are protected and cannot be deleted to ensure payroll integrity and compliance.
         </p>
       </div>
 
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <div className="relative flex-1 md:flex-none">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+          <div className="relative w-full sm:w-48">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
               type="date" 
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none w-full"
+              className="pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none w-full text-sm"
             />
           </div>
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
               type="text" 
               placeholder="Search employee..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
             />
           </div>
         </div>
         <button 
           onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-xl border border-slate-200 hover:bg-slate-100 transition-all font-medium w-full md:w-auto justify-center"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-xl border border-slate-200 hover:bg-slate-100 transition-all font-bold text-sm w-full lg:w-auto justify-center active:scale-95"
         >
           <Download className="w-4 h-4" />
           Export Report
         </button>
       </div>
 
-      {/* Attendance Grid */}
+      {/* Attendance List/Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
@@ -192,11 +194,11 @@ export default function AttendanceManagement() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">Loading attendance...</td>
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400">Loading attendance...</td>
                 </tr>
               ) : filteredAttendance.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">No attendance records for this date</td>
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400">No attendance records for this date</td>
                 </tr>
               ) : (
                 filteredAttendance.map((item) => (
@@ -260,43 +262,78 @@ export default function AttendanceManagement() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {item.selfieUrl ? (
-                          <div className="flex flex-col items-center gap-1">
+                      <div className="grid grid-cols-2 gap-2 w-fit">
+                        {/* Clock In Selfie */}
+                        <div className="flex flex-col items-center gap-1">
+                          {item.selfieUrl ? (
                             <button 
                               onClick={() => setPreviewImage(item.selfieUrl!)}
                               className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
-                              title="In Selfie"
+                              title="Clock In Selfie"
                             >
-                              <img src={item.selfieUrl} alt="In Selfie" className="w-full h-full object-cover" />
+                              <img src={item.selfieUrl} alt="In" className="w-full h-full object-cover" />
                             </button>
-                            <span className="text-[8px] font-bold text-slate-400 uppercase">In</span>
-                          </div>
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
-                            <User className="w-4 h-4 text-slate-300" />
-                          </div>
-                        )}
-
-                        {item.outSelfieUrl ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <button 
-                              onClick={() => setPreviewImage(item.outSelfieUrl!)}
-                              className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
-                              title="Out Selfie"
-                            >
-                              <img src={item.outSelfieUrl} alt="Out Selfie" className="w-full h-full object-cover" />
-                            </button>
-                            <span className="text-[8px] font-bold text-slate-400 uppercase">Out</span>
-                          </div>
-                        ) : item.outTime ? (
-                          <div className="flex flex-col items-center gap-1">
+                          ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
                               <User className="w-4 h-4 text-slate-300" />
                             </div>
-                            <span className="text-[8px] font-bold text-slate-400 uppercase">Out</span>
-                          </div>
-                        ) : null}
+                          )}
+                          <span className="text-[7px] font-bold text-slate-400 uppercase">In</span>
+                        </div>
+
+                        {/* Break In Selfie */}
+                        <div className="flex flex-col items-center gap-1">
+                          {item.breakInSelfieUrl ? (
+                            <button 
+                              onClick={() => setPreviewImage(item.breakInSelfieUrl!)}
+                              className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
+                              title="Break In Selfie"
+                            >
+                              <img src={item.breakInSelfieUrl} alt="B-In" className="w-full h-full object-cover" />
+                            </button>
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
+                              <User className="w-4 h-4 text-slate-300" />
+                            </div>
+                          )}
+                          <span className="text-[7px] font-bold text-slate-400 uppercase">B-In</span>
+                        </div>
+
+                        {/* Break Out Selfie */}
+                        <div className="flex flex-col items-center gap-1">
+                          {item.breakOutSelfieUrl ? (
+                            <button 
+                              onClick={() => setPreviewImage(item.breakOutSelfieUrl!)}
+                              className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
+                              title="Break Out Selfie"
+                            >
+                              <img src={item.breakOutSelfieUrl} alt="B-Out" className="w-full h-full object-cover" />
+                            </button>
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
+                              <User className="w-4 h-4 text-slate-300" />
+                            </div>
+                          )}
+                          <span className="text-[7px] font-bold text-slate-400 uppercase">B-Out</span>
+                        </div>
+
+                        {/* Clock Out Selfie */}
+                        <div className="flex flex-col items-center gap-1">
+                          {item.outSelfieUrl ? (
+                            <button 
+                              onClick={() => setPreviewImage(item.outSelfieUrl!)}
+                              className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
+                              title="Clock Out Selfie"
+                            >
+                              <img src={item.outSelfieUrl} alt="Out" className="w-full h-full object-cover" />
+                            </button>
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
+                              <User className="w-4 h-4 text-slate-300" />
+                            </div>
+                          )}
+                          <span className="text-[7px] font-bold text-slate-400 uppercase">Out</span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -322,6 +359,106 @@ export default function AttendanceManagement() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="lg:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="p-8 text-center text-slate-400">Loading attendance...</div>
+          ) : filteredAttendance.length === 0 ? (
+            <div className="p-8 text-center text-slate-400">No records found</div>
+          ) : (
+            filteredAttendance.map((item) => (
+              <div key={item.id} className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold border border-blue-100">
+                      {item.employeeName.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{item.employeeName}</p>
+                      <p className="text-[10px] text-slate-500">{item.employeeId}</p>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                    item.status === 'present' ? 'bg-emerald-50 text-emerald-600' :
+                    item.status === 'late' ? 'bg-amber-50 text-amber-600' :
+                    'bg-red-50 text-red-600'
+                  }`}>
+                    {item.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-[10px]">
+                  <div className="bg-slate-50 p-2 rounded-xl">
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">In Time</p>
+                    <p className="text-slate-800 font-bold">{item.inTime || '--:--'}</p>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded-xl">
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Break</p>
+                    <p className="text-slate-800 font-bold">{item.breakInTime || '--:--'} - {item.breakOutTime || '--:--'}</p>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded-xl">
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Out Time</p>
+                    <p className="text-slate-800 font-bold">{item.outTime || '--:--'}</p>
+                  </div>
+                </div>
+
+                {/* Mobile Selfie Row */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {[
+                    { url: item.selfieUrl, label: 'In' },
+                    { url: item.breakInSelfieUrl, label: 'B-In' },
+                    { url: item.breakOutSelfieUrl, label: 'B-Out' },
+                    { url: item.outSelfieUrl, label: 'Out' }
+                  ].map((s, idx) => (
+                    <div key={idx} className="flex flex-col items-center gap-1 shrink-0">
+                      {s.url ? (
+                        <button 
+                          onClick={() => setPreviewImage(s.url!)}
+                          className="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-200 shadow-sm"
+                        >
+                          <img src={s.url} alt={s.label} className="w-full h-full object-cover" />
+                        </button>
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
+                          <User className="w-4 h-4 text-slate-300" />
+                        </div>
+                      )}
+                      <span className="text-[7px] font-bold text-slate-400 uppercase">{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                  <div className="flex items-center gap-2">
+                    {item.location && (
+                      <button 
+                        onClick={() => window.open(`https://www.google.com/maps?q=${item.location?.lat},${item.location?.lng}`, '_blank')}
+                        className="flex items-center gap-1 text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded-lg"
+                      >
+                        <MapPin className="w-3 h-3" />
+                        GPS
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setSelectedEmployeeForCalendar({ id: item.employeeId, name: item.employeeName })}
+                      className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded-lg"
+                    >
+                      <Calendar className="w-3 h-3" />
+                      Calendar
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => confirmDelete(item.id)}
+                    className="p-2 bg-red-50 text-red-500 rounded-lg active:scale-90 transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

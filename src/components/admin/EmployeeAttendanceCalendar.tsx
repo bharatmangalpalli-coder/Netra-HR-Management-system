@@ -43,16 +43,17 @@ export default function EmployeeAttendanceCalendar({ employeeId, employeeName, o
 
       const q = query(
         collection(db, 'attendance'),
-        where('employeeId', '==', employeeId),
-        where('date', '>=', startOfMonth),
-        where('date', '<=', endOfMonth)
+        where('employeeId', '==', employeeId)
       );
 
       const querySnapshot = await getDocs(q);
       const data: Record<string, Attendance> = {};
       querySnapshot.docs.forEach(doc => {
         const att = { id: doc.id, ...doc.data() } as Attendance;
-        data[att.date] = att;
+        // Filter by date range in memory to avoid composite index requirement
+        if (att.date >= startOfMonth && att.date <= endOfMonth) {
+          data[att.date] = att;
+        }
       });
       setAttendanceData(data);
     } catch (error) {

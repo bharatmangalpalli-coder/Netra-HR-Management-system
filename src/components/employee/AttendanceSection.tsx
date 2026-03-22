@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { 
   Clock, 
   MapPin, 
-  Camera as CameraIcon, 
   CheckCircle2, 
   AlertCircle,
   History,
   X,
-  RefreshCw
+  RefreshCw,
+  UserCheck,
+  UserMinus,
+  UserPlus,
+  Camera,
+  Check
 } from 'lucide-react';
 import { Employee, Attendance } from '../../types';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, limit, orderBy } from 'firebase/firestore';
@@ -25,96 +29,36 @@ export default function AttendanceSection({ employee }: Props) {
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<Attendance[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  
-  // Camera State
   const [showCamera, setShowCamera] = useState(false);
-  const [cameraMode, setCameraMode] = useState<'in' | 'out'>('in');
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [pendingAction, setPendingAction] = useState<'in' | 'out' | 'break-in' | 'break-out' | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     fetchTodayAttendance();
     fetchHistory();
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-    };
   }, [employee.id]);
 
-  useEffect(() => {
-    if (showCamera && stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [showCamera, stream]);
-
-  const startCamera = async (mode: 'in' | 'out' = 'in') => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast.error("Camera access is not supported by your browser or environment.");
-      return;
-    }
-
-    setLoading(true);
+  const startCamera = async () => {
     try {
-      setCameraMode(mode);
-      setShowCamera(true);
-      setCapturedImage(null);
-      
-      // Small delay to ensure modal is rendered
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      let mediaStream: MediaStream;
-      try {
-        // Try with simple constraints first for better compatibility
-        mediaStream = await navigator.mediaDevices.getUserMedia({ 
-          video: true, 
-          audio: false 
-        });
-      } catch (e) {
-        console.warn("Simple video: true failed, trying with facingMode", e);
-        try {
-          mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'user' }, 
-            audio: false 
-          });
-        } catch (e2) {
-          console.warn("facingMode failed, trying with width/height", e2);
-          mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: { ideal: 640 }, height: { ideal: 480 } }, 
-            audio: false 
-          });
-        }
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user' },
+        audio: false 
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
-      
-      setStream(mediaStream);
-    } catch (error: any) {
-      console.error("Error accessing camera:", error);
+    } catch (err) {
+      toast.error('Camera access denied');
       setShowCamera(false);
-      
-      let errorMsg = "Could not access camera.";
-      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        errorMsg = "Camera permission denied. Please allow camera access in your browser settings.";
-      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError' || error.message?.includes('found')) {
-        errorMsg = "No camera found on this device. Please ensure your camera is connected.";
-      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-        errorMsg = "Camera is already in use by another application.";
-      } else {
-        errorMsg = `Camera Error: ${error.message || 'Unknown error'}`;
-      }
-      
-      toast.error(errorMsg);
-    } finally {
-      setLoading(false);
     }
   };
 
   const stopCamera = () => {
-    if (stream) {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach(track => track.stop());
-      setStream(null);
     }
-    setShowCamera(false);
   };
 
   const capturePhoto = () => {
@@ -125,15 +69,18 @@ export default function AttendanceSection({ employee }: Props) {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
         setCapturedImage(dataUrl);
-        // Stop stream after capture to save battery/resources
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-          setStream(null);
-        }
+        stopCamera();
       }
     }
+  };
+
+  const handleActionClick = (action: 'in' | 'out' | 'break-in' | 'break-out') => {
+    setPendingAction(action);
+    setShowCamera(true);
+    setCapturedImage(null);
+    setTimeout(startCamera, 100);
   };
 
   const fetchTodayAttendance = async () => {
@@ -176,115 +123,88 @@ export default function AttendanceSection({ employee }: Props) {
     }
   };
 
-  const handleMarkIn = async () => {
-    console.log("handleMarkIn clicked");
-    if (!capturedImage) {
-      return toast.error("Please capture a selfie first");
-    }
-
+  const updateAttendance = async (action: 'in' | 'out' | 'break-in' | 'break-out', selfie: string) => {
     setLoading(true);
     try {
-      console.log("Getting location...");
-      // Get Location
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        });
-      });
-      console.log("Location obtained:", position.coords);
-
       const now = new Date();
-      const inTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const status = now.getHours() >= 10 ? 'late' : 'present';
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const empId = employee.employeeId || employee.id;
 
-      const newAttendance = {
-        employeeId: employee.employeeId || employee.id,
-        employeeName: employee.name,
-        date: getTodayDate(),
-        inTime,
-        outTime: null,
-        location: {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        },
-        status,
-        selfieUrl: capturedImage
-      };
+      if (action === 'in') {
+        // Get Location
+        let location = { lat: 0, lng: 0 };
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 5000,
+              maximumAge: 0
+            });
+          });
+          location = { lat: position.coords.latitude, lng: position.coords.longitude };
+        } catch (e) {
+          console.warn("Location access denied or failed");
+        }
 
-      await addDoc(collection(db, 'attendance'), newAttendance);
-      toast.success('Attendance marked successfully');
-      setShowCamera(false);
-      setCapturedImage(null);
+        const newAttendance = {
+          employeeId: empId,
+          employeeName: employee.name,
+          date: getTodayDate(),
+          inTime: timeStr,
+          outTime: null,
+          breakInTime: null,
+          breakOutTime: null,
+          location,
+          selfieUrl: selfie,
+          status: 'present',
+          markedAt: new Date().toISOString()
+        };
+
+        await addDoc(collection(db, 'attendance'), newAttendance);
+        toast.success('Clocked in successfully');
+      } else {
+        if (!todayAttendance) return;
+
+        const updates: any = {};
+        if (action === 'out') {
+          updates.outTime = timeStr;
+          updates.outSelfieUrl = selfie;
+        }
+        if (action === 'break-in') {
+          updates.breakInTime = timeStr;
+          updates.breakInSelfieUrl = selfie;
+        }
+        if (action === 'break-out') {
+          updates.breakOutTime = timeStr;
+          updates.breakOutSelfieUrl = selfie;
+        }
+
+        await updateDoc(doc(db, 'attendance', todayAttendance.id), updates);
+        toast.success(`${action.replace('-', ' ')} recorded`);
+      }
+
       fetchTodayAttendance();
+      fetchHistory();
+      setShowCamera(false);
+      setPendingAction(null);
+      setCapturedImage(null);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to mark attendance');
+      toast.error(error.message || 'Failed to update attendance');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleMarkOut = async () => {
-    console.log("handleMarkOut clicked");
-    if (!todayAttendance) return;
-    if (!capturedImage) {
-      return toast.error("Please capture a selfie first");
-    }
-
-    setLoading(true);
-    try {
-      const outTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      await updateDoc(doc(db, 'attendance', todayAttendance.id), { 
-        outTime,
-        outSelfieUrl: capturedImage 
-      });
-      toast.success('Checked out successfully');
-      setShowCamera(false);
-      setCapturedImage(null);
-      fetchTodayAttendance();
-    } catch (error) {
-      toast.error('Failed to mark out');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBreakIn = async () => {
-    console.log("handleBreakIn clicked");
-    if (!todayAttendance) return;
-    setLoading(true);
-    try {
-      const breakInTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      await updateDoc(doc(db, 'attendance', todayAttendance.id), { breakInTime });
-      toast.success('Break started');
-      fetchTodayAttendance();
-    } catch (error) {
-      toast.error('Failed to start break');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBreakOut = async () => {
-    console.log("handleBreakOut clicked");
-    if (!todayAttendance) return;
-    setLoading(true);
-    try {
-      const breakOutTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      await updateDoc(doc(db, 'attendance', todayAttendance.id), { breakOutTime });
-      toast.success('Break ended');
-      fetchTodayAttendance();
-    } catch (error) {
-      toast.error('Failed to end break');
-    } finally {
-      setLoading(false);
-    }
+  const getStatusDisplay = () => {
+    if (!todayAttendance) return 'Not Clocked In';
+    if (todayAttendance.outTime) return 'Shift Completed';
+    if (todayAttendance.breakInTime && !todayAttendance.breakOutTime) return 'On Break';
+    return 'Currently Working';
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between px-2">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between px-1">
         <h2 className="text-xl font-bold text-slate-800">Attendance</h2>
         <button 
           onClick={() => setShowHistory(!showHistory)}
@@ -297,108 +217,114 @@ export default function AttendanceSection({ employee }: Props) {
       {!showHistory ? (
         <div className="space-y-6">
           {/* Status Card */}
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 text-center">
-            <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mx-auto mb-6 text-blue-600">
-              <Clock className="w-10 h-10" />
+          <div className="card text-center py-8">
+            <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-blue-600">
+              <Clock className="w-8 h-8" />
             </div>
-            <h3 className="text-2xl font-bold text-slate-800">
-              {todayAttendance ? (
-                todayAttendance.outTime ? 'Shift Completed' : 
-                (todayAttendance.breakInTime && !todayAttendance.breakOutTime) ? 'On Break' : 'You are IN'
-              ) : 'Ready to Start?'}
+            <h3 className="text-xl font-bold text-slate-800">
+              {getStatusDisplay()}
             </h3>
-            <p className="text-slate-500 text-sm mt-2">
-              {todayAttendance 
-                ? (todayAttendance.breakInTime && !todayAttendance.breakOutTime)
-                  ? `Break started at ${todayAttendance.breakInTime}`
-                  : `Clocked in at ${todayAttendance.inTime}` 
-                : 'Please mark your attendance for today'}
+            <p className="text-slate-500 text-xs mt-1">
+              {todayAttendance?.date ? `Date: ${todayAttendance.date}` : 'Ready to start your shift?'}
             </p>
 
-            <div className="mt-10 space-y-4">
-              {!todayAttendance ? (
+            <div className="mt-8 grid grid-cols-1 gap-4">
+              {!todayAttendance && (
                 <button 
-                  onClick={() => startCamera('in')}
+                  onClick={() => handleActionClick('in')}
                   disabled={loading}
-                  className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="btn bg-emerald-600 text-white shadow-lg shadow-emerald-100 flex items-center justify-center gap-3 text-lg h-14"
                 >
-                  <CameraIcon className="w-6 h-6" />
-                  {loading ? 'Processing...' : 'Mark Attendance IN'}
+                  <UserCheck className="w-6 h-6" />
+                  {loading ? 'Processing...' : 'Clock In'}
                 </button>
-              ) : !todayAttendance.outTime ? (
-                <div className="space-y-3">
-                  {(!todayAttendance.breakInTime) ? (
+              )}
+
+              {todayAttendance && !todayAttendance.outTime && (
+                <>
+                  {(!todayAttendance.breakInTime || todayAttendance.breakOutTime) ? (
                     <button 
-                      onClick={handleBreakIn}
+                      onClick={() => handleActionClick('break-in')}
                       disabled={loading}
-                      className="w-full py-4 bg-indigo-500 text-white rounded-3xl font-bold text-lg shadow-xl shadow-indigo-100 hover:bg-indigo-600 transition-all disabled:opacity-50"
+                      className="btn bg-amber-500 text-white shadow-lg shadow-amber-100 flex items-center justify-center gap-3 text-lg h-14"
                     >
+                      <RefreshCw className="w-6 h-6" />
                       {loading ? 'Processing...' : 'Start Break'}
                     </button>
-                  ) : (!todayAttendance.breakOutTime) ? (
+                  ) : (
                     <button 
-                      onClick={handleBreakOut}
+                      onClick={() => handleActionClick('break-out')}
                       disabled={loading}
-                      className="w-full py-4 bg-emerald-500 text-white rounded-3xl font-bold text-lg shadow-xl shadow-emerald-100 hover:bg-emerald-600 transition-all disabled:opacity-50"
+                      className="btn bg-blue-500 text-white shadow-lg shadow-blue-100 flex items-center justify-center gap-3 text-lg h-14"
                     >
+                      <RefreshCw className="w-6 h-6" />
                       {loading ? 'Processing...' : 'End Break'}
                     </button>
-                  ) : null}
+                  )}
                   
                   <button 
-                    onClick={() => startCamera('out')}
-                    disabled={loading || (todayAttendance.breakInTime && !todayAttendance.breakOutTime)}
-                    className="w-full py-4 bg-amber-500 text-white rounded-3xl font-bold text-lg shadow-xl shadow-amber-100 hover:bg-amber-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    onClick={() => handleActionClick('out')}
+                    disabled={loading}
+                    className="btn bg-red-500 text-white shadow-lg shadow-red-100 flex items-center justify-center gap-3 text-lg h-14"
                   >
-                    <CameraIcon className="w-6 h-6" />
-                    {loading ? 'Processing...' : 'Mark Attendance OUT'}
+                    <UserMinus className="w-6 h-6" />
+                    {loading ? 'Processing...' : 'Clock Out'}
                   </button>
-                </div>
-              ) : (
-                <div className="py-4 bg-emerald-50 text-emerald-600 rounded-3xl font-bold text-lg flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-6 h-6" />
-                  Done for Today
+                </>
+              )}
+
+              {todayAttendance?.outTime && (
+                <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl font-bold flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-5 h-5" />
+                  Shift Completed
                 </div>
               )}
             </div>
+
+            {todayAttendance && (
+              <div className="mt-8 grid grid-cols-2 gap-4 border-t border-slate-50 pt-6">
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">In</p>
+                  <p className="text-sm font-bold text-slate-800">{todayAttendance.inTime || '--:--'}</p>
+                </div>
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Out</p>
+                  <p className="text-sm font-bold text-slate-800">{todayAttendance.outTime || '--:--'}</p>
+                </div>
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Break In</p>
+                  <p className="text-sm font-bold text-slate-800">{todayAttendance.breakInTime || '--:--'}</p>
+                </div>
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Break Out</p>
+                  <p className="text-sm font-bold text-slate-800">{todayAttendance.breakOutTime || '--:--'}</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Location Info */}
-          <div className="bg-slate-900 p-6 rounded-[2rem] text-white flex items-center gap-4">
-            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center">
-              <MapPin className="w-6 h-6 text-blue-400" />
+          <div className="card bg-slate-900 text-white flex items-center gap-4 border-none">
+            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
+              <MapPin className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Current Location</p>
-              <p className="text-sm font-medium">Main Office, Sector 5</p>
+              <p className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Current Location</p>
+              <p className="text-xs font-medium">Main Office, Sector 5</p>
             </div>
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-start gap-3 mb-2">
-            <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-            <p className="text-xs text-blue-700 leading-relaxed">
-              <strong>Attendance Protection:</strong> Your attendance records are securely saved and protected for a minimum of 30 days for payroll accuracy.
-            </p>
-          </div>
+        <div className="space-y-3">
           {history.map((item) => (
-            <div key={item.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+            <div key={item.id} className="card flex items-center justify-between">
               <div>
-                <p className="text-sm font-bold text-slate-800">{new Date(item.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">IN: {item.inTime}</span>
-                  {item.breakInTime && (
-                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">B-IN: {item.breakInTime}</span>
-                  )}
-                  {item.breakOutTime && (
-                    <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">B-OUT: {item.breakOutTime}</span>
-                  )}
-                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">OUT: {item.outTime || '--:--'}</span>
-                </div>
+                <p className="text-xs font-bold text-slate-800">{new Date(item.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Time: {item.inTime}</p>
               </div>
-              <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                item.status === 'present' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                item.status === 'present' ? 'bg-emerald-50 text-emerald-600' : 
+                item.status === 'half-day' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'
               }`}>
                 {item.status}
               </span>
@@ -410,79 +336,91 @@ export default function AttendanceSection({ employee }: Props) {
       {/* Camera Modal */}
       <AnimatePresence>
         {showCamera && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-6"
-          >
-            <button 
-              onClick={stopCamera}
-              className="absolute top-6 right-6 p-3 bg-white/10 rounded-full text-white"
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-sm w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
             >
-              <X className="w-6 h-6" />
-            </button>
-
-            <div className="w-full max-w-sm aspect-[3/4] bg-slate-900 rounded-[2.5rem] overflow-hidden relative border-2 border-white/20">
-              {!capturedImage ? (
-                <video 
-                  ref={videoRef}
-                  autoPlay 
-                  playsInline 
-                  muted
-                  className="w-full h-full object-cover scale-x-[-1]"
-                />
-              ) : (
-                <img 
-                  src={capturedImage} 
-                  alt="Captured" 
-                  className="w-full h-full object-cover scale-x-[-1]" 
-                />
-              )}
-              
-              {!capturedImage && (
-                <div className="absolute inset-0 border-[40px] border-black/20 pointer-events-none">
-                  <div className="w-full h-full border-2 border-white/40 rounded-[1.5rem] border-dashed"></div>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-12 w-full max-w-sm space-y-4">
-              {!capturedImage ? (
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-bold text-slate-800 capitalize">
+                  Selfie for {pendingAction?.replace('-', ' ')}
+                </h3>
                 <button 
-                  onClick={capturePhoto}
-                  className="w-full py-4 bg-white text-black rounded-3xl font-bold text-lg flex items-center justify-center gap-2"
+                  onClick={() => {
+                    stopCamera();
+                    setShowCamera(false);
+                  }}
+                  className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"
                 >
-                  <CameraIcon className="w-6 h-6" />
-                  Capture Selfie
+                  <X className="w-5 h-5" />
                 </button>
-              ) : (
-                <>
+              </div>
+
+              <div className="relative aspect-square bg-slate-900 overflow-hidden">
+                {!capturedImage ? (
+                  <video 
+                    ref={videoRef} 
+                    autoPlay 
+                    playsInline 
+                    className="w-full h-full object-cover scale-x-[-1]"
+                  />
+                ) : (
+                  <img 
+                    src={capturedImage} 
+                    alt="Captured" 
+                    className="w-full h-full object-cover scale-x-[-1]" 
+                  />
+                )}
+                
+                {!capturedImage && (
+                  <div className="absolute inset-0 border-2 border-white/20 pointer-events-none flex items-center justify-center">
+                    <div className="w-48 h-48 border-2 border-dashed border-white/40 rounded-full"></div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6">
+                {!capturedImage ? (
                   <button 
-                    onClick={cameraMode === 'in' ? handleMarkIn : handleMarkOut}
-                    disabled={loading}
-                    className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-900/40 flex items-center justify-center gap-2"
+                    onClick={capturePhoto}
+                    className="w-full btn bg-blue-600 text-white h-12 flex items-center justify-center gap-2"
                   >
-                    {loading ? <RefreshCw className="w-6 h-6 animate-spin" /> : <CheckCircle2 className="w-6 h-6" />}
-                    {loading ? 'Marking Attendance...' : cameraMode === 'in' ? 'Confirm & Mark IN' : 'Confirm & Mark OUT'}
+                    <Camera className="w-5 h-5" />
+                    Capture Selfie
                   </button>
-                  <button 
-                    onClick={() => {
-                      setCapturedImage(null);
-                      startCamera(cameraMode);
-                    }}
-                    className="w-full py-4 bg-white/10 text-white rounded-3xl font-bold text-lg"
-                  >
-                    Retake Photo
-                  </button>
-                </>
-              )}
-            </div>
-            
-            <p className="mt-6 text-white/40 text-xs text-center px-8">
-              Position your face within the frame. Your location will be recorded automatically.
-            </p>
-          </motion.div>
+                ) : (
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => {
+                        setCapturedImage(null);
+                        startCamera();
+                      }}
+                      className="flex-1 btn bg-slate-100 text-slate-600 h-12"
+                    >
+                      Retake
+                    </button>
+                    <button 
+                      onClick={() => pendingAction && updateAttendance(pendingAction, capturedImage)}
+                      disabled={loading}
+                      className="flex-1 btn bg-emerald-600 text-white h-12 flex items-center justify-center gap-2"
+                    >
+                      {loading ? 'Uploading...' : (
+                        <>
+                          <Check className="w-5 h-5" />
+                          Confirm
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400 text-center mt-4">
+                  Please ensure your face is clearly visible in the frame.
+                </p>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
