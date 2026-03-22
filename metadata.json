@@ -1,5 +1,5 @@
 {
-  "name": "Netra Consultancy HRMS",
+  "name": "SalaryCalc - HRMS Salary System",
   "description": "An attendance-based HRMS salary calculation system with automated payroll processing, salary slip generation, and attendance tracking.",
   "requestFramePermissions": [
     "geolocation",
