@@ -41,17 +41,48 @@ export default function AttendanceSection({ employee, onBack }: Props) {
     fetchHistory();
   }, [employee.id]);
 
+  useEffect(() => {
+    if (showCamera && !capturedImage) {
+      // Small delay to ensure the video ref is available after modal animation starts
+      const timer = setTimeout(startCamera, 300);
+      return () => {
+        clearTimeout(timer);
+        stopCamera();
+      };
+    }
+  }, [showCamera, capturedImage]);
+
   const startCamera = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not supported in this browser');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' },
+        video: { 
+          facingMode: 'user'
+        },
         audio: false 
       });
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+      } else {
+        // If ref is not ready, try one more time after a short delay
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        }, 100);
       }
-    } catch (err) {
-      toast.error('Camera access denied');
+    } catch (err: any) {
+      console.error('Camera Error:', err);
+      let message = 'Camera access denied';
+      if (err.name === 'NotFoundError') message = 'No camera found';
+      if (err.name === 'NotAllowedError') message = 'Camera permission denied';
+      if (err.name === 'NotReadableError') message = 'Camera is already in use';
+      
+      toast.error(message);
       setShowCamera(false);
     }
   };
@@ -64,7 +95,7 @@ export default function AttendanceSection({ employee, onBack }: Props) {
   };
 
   const capturePhoto = () => {
-    if (videoRef.current) {
+    if (videoRef.current && videoRef.current.videoWidth > 0) {
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
@@ -75,14 +106,16 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         setCapturedImage(dataUrl);
         stopCamera();
       }
+    } else {
+      toast.error('Camera not ready. Please wait a moment.');
+      if (!capturedImage) startCamera();
     }
   };
 
   const handleActionClick = (action: 'in' | 'out' | 'lunch-in' | 'lunch-out') => {
     setPendingAction(action);
-    setShowCamera(true);
     setCapturedImage(null);
-    setTimeout(startCamera, 100);
+    setShowCamera(true);
   };
 
   const fetchTodayAttendance = async () => {
@@ -386,6 +419,7 @@ export default function AttendanceSection({ employee, onBack }: Props) {
                     ref={videoRef} 
                     autoPlay 
                     playsInline 
+                    muted
                     className="w-full h-full object-cover scale-x-[-1]"
                   />
                 ) : (
