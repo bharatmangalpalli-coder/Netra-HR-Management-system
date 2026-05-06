@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Employee, Attendance } from '../../types';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, limit, orderBy } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { getTodayDate } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
@@ -42,45 +42,51 @@ export default function AttendanceSection({ employee, onBack }: Props) {
   }, [employee.id]);
 
   useEffect(() => {
+    const isActive = { current: true };
     if (showCamera && !capturedImage) {
       // Small delay to ensure the video ref is available after modal animation starts
-      const timer = setTimeout(startCamera, 300);
+      const timer = setTimeout(() => startCamera(isActive), 300);
       return () => {
+        isActive.current = false;
         clearTimeout(timer);
         stopCamera();
       };
     }
   }, [showCamera, capturedImage]);
 
-  const startCamera = async () => {
+  const startCamera = async (isActive?: { current: boolean }) => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API not supported in this browser');
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'user'
-        },
+        video: { facingMode: 'user' },
         audio: false 
       });
+
+      if (isActive && !isActive.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       } else {
-        // If ref is not ready, try one more time after a short delay
         setTimeout(() => {
-          if (videoRef.current) {
+          if (videoRef.current && (!isActive || isActive.current)) {
             videoRef.current.srcObject = stream;
+          } else {
+            stream.getTracks().forEach(track => track.stop());
           }
-        }, 100);
+        }, 150);
       }
     } catch (err: any) {
       console.error('Camera Error:', err);
-      let message = 'Camera access denied';
-      if (err.name === 'NotFoundError') message = 'No camera found';
-      if (err.name === 'NotAllowedError') message = 'Camera permission denied';
-      if (err.name === 'NotReadableError') message = 'Camera is already in use';
+      let message = 'Camera access denied. Please allow permissions and refresh.';
+      if (err.name === 'NotFoundError' || err.message?.includes('Found')) message = 'No camera found';
+      if (err.name === 'NotAllowedError' || err.message?.includes('Permission')) message = 'Camera permission denied';
+      if (err.name === 'NotReadableError' || err.message?.includes('readable')) message = 'Camera is already in use';
       
       toast.error(message);
       setShowCamera(false);
@@ -158,6 +164,28 @@ export default function AttendanceSection({ employee, onBack }: Props) {
     }
   };
 
+  const calculateWorkingMinutes = (inTime: string, outTime: string, lOut?: string | null, lIn?: string | null) => {
+    const getMinutes = (timeStr: string) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const inMin = getMinutes(inTime);
+    const outMin = getMinutes(outTime);
+    let total = outMin - inMin;
+
+    if (lOut && lIn) {
+      const lOutMin = getMinutes(lOut);
+      const lInMin = getMinutes(lIn);
+      const lunchDuration = lInMin - lOutMin;
+      if (lunchDuration > 0) {
+        total -= lunchDuration;
+      }
+    }
+
+    return total;
+  };
+
   const updateAttendance = async (action: 'in' | 'out' | 'lunch-in' | 'lunch-out', selfie: string) => {
     setLoading(true);
     try {
@@ -171,14 +199,15 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         const shiftStartDate = new Date();
         shiftStartDate.setHours(targetH, targetM, 0);
         
-        const lateLimit = new Date(shiftStartDate.getTime() + 30 * 60000);
         let status: 'present' | 'half-day' | 'late' = 'present';
 
-        if (now > lateLimit) {
-          status = 'half-day';
-          toast.error('Logging in after 30 mins grace period. Marked as Half Day.');
-        } else if (now > shiftStartDate) {
-          status = 'late';
+        if (employee.isFlexibleShift) {
+          status = 'present';
+        } else {
+          // No grace period: anytime after shiftStart is late.
+          if (now > shiftStartDate) {
+            status = 'late';
+          }
         }
 
         // Get Location
@@ -198,6 +227,7 @@ export default function AttendanceSection({ employee, onBack }: Props) {
 
         const newAttendance = {
           employeeId: empId,
+          userId: auth?.currentUser?.uid, // Add UID for security rules
           employeeName: employee.name,
           date: getTodayDate(),
           inTime: timeStr,
@@ -207,6 +237,7 @@ export default function AttendanceSection({ employee, onBack }: Props) {
           location,
           selfieUrl: selfie,
           status,
+          totalHours: 0,
           markedAt: new Date().toISOString()
         };
 
@@ -215,10 +246,38 @@ export default function AttendanceSection({ employee, onBack }: Props) {
       } else {
         if (!todayAttendance) return;
 
-        const updates: any = {};
+        const updates: any = {
+          userId: auth?.currentUser?.uid // Ensure UID is attached to all updates
+        };
         if (action === 'out') {
           updates.outTime = timeStr;
           updates.outSelfieUrl = selfie;
+
+          // Calculate total hours excluding lunch
+          if (todayAttendance.inTime) {
+            const totalMinutes = calculateWorkingMinutes(
+              todayAttendance.inTime,
+              timeStr,
+              todayAttendance.lunchOutTime,
+              todayAttendance.lunchInTime
+            );
+            
+            updates.totalHours = parseFloat((totalMinutes / 60).toFixed(2));
+
+            // If total hours >= 9, consider it a full day (present)
+            // Even if they were marked "late" on check-in, completing 9 hours compensates.
+            if (totalMinutes >= 540) { // 9 hours * 60 minutes
+              updates.status = 'present';
+            } else if (totalMinutes < 540 && totalMinutes >= 240) {
+              // Usually if it's less than 9 but more than 4, it's half day.
+              // We'll keep the existing status unless it should be upgraded to present.
+              if (todayAttendance.status !== 'late') {
+                updates.status = 'half-day';
+              }
+            } else if (totalMinutes < 240) {
+               updates.status = 'absent';
+            }
+          }
         }
         if (action === 'lunch-out') {
           updates.lunchOutTime = timeStr;

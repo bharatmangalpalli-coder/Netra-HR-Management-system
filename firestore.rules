@@ -22,7 +22,15 @@ service cloud.firestore {
     function isEmployee(employeeId) {
       return isSignedIn() && (
         request.auth.uid == employeeId || 
-        get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.employeeId == employeeId
+        (exists(/databases/$(database)/documents/employees/$(request.auth.uid)) && get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.employeeId == employeeId)
+      );
+    }
+
+    function isOwnerOfDoc(data) {
+      return isSignedIn() && (
+        (data.userId != null && data.userId == request.auth.uid) ||
+        (data.employeeId != null && data.employeeId == request.auth.uid) ||
+        (data.assignedTo != null && data.assignedTo == request.auth.uid)
       );
     }
 
@@ -40,8 +48,8 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isAdmin() || (isOwner(employeeId) && isValidId(employeeId));
       allow update: if isAdmin() || (
-        isEmployee(employeeId) && 
-        incoming().diff(existing()).affectedKeys().hasOnly(['mobile', 'address', 'bankName', 'accountNumber', 'ifscCode'])
+        (isOwner(employeeId) || isOwnerOfDoc(existing())) && 
+        incoming().diff(existing()).affectedKeys().hasOnly(['mobile', 'address', 'bankName', 'accountNumber', 'ifscCode', 'userId'])
       );
       allow delete: if isAdmin();
     }
@@ -51,12 +59,13 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && (isEmployee(incoming().employeeId) || isAdmin());
       allow update: if isAdmin() || (
-        isEmployee(existing().employeeId) && 
+        (isOwnerOfDoc(existing()) || isEmployee(existing().employeeId)) && 
         incoming().diff(existing()).affectedKeys().hasOnly([
           'outTime', 'outSelfieUrl', 
           'lunchOutTime', 'lunchOutSelfieUrl', 
           'lunchInTime', 'lunchInSelfieUrl', 
-          'status', 'totalHours', 'checkOut'
+          'status', 'totalHours', 'checkOut',
+          'userId'
         ])
       );
       allow delete: if isAdmin();
@@ -66,15 +75,18 @@ service cloud.firestore {
     match /leaves/{leaveId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && (isEmployee(incoming().employeeId) || isAdmin());
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow update: if isAdmin() || isOwnerOfDoc(existing());
+      allow delete: if isAdmin() || isOwnerOfDoc(existing());
     }
 
     // Tasks collection
     match /tasks/{taskId} {
       allow read: if isSignedIn();
       allow create: if isAdmin();
-      allow update: if isAdmin() || (isEmployee(existing().assignedTo) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'comments']));
+      allow update: if isAdmin() || (
+        (isOwnerOfDoc(existing()) || isEmployee(existing().assignedTo)) && 
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'comments'])
+      );
       allow delete: if isAdmin();
     }
 
@@ -88,8 +100,8 @@ service cloud.firestore {
     match /permissions/{permissionId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && (isEmployee(incoming().employeeId) || isAdmin());
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow update: if isAdmin() || isOwnerOfDoc(existing());
+      allow delete: if isAdmin() || isOwnerOfDoc(existing());
     }
 
     // Settings collection

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Employee, LeaveRequest } from '../../types';
 import { collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, auth } from '../../lib/firebase';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
 import PageHeader from '../ui/PageHeader';
@@ -91,6 +91,7 @@ export default function LeaveSection({ employee, onBack }: Props) {
       
       const newLeave = {
         ...formData,
+        userId: auth?.currentUser?.uid, // Add UID for security rules
         type: isExtra ? 'LWP (Unpaid)' : formData.type,
         employeeId: employee.employeeId || employee.id,
         employeeName: employee.name,

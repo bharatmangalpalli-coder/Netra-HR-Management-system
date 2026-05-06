@@ -89,7 +89,7 @@ export default function App() {
               // Fallback: If not found in either system, grant employee access by default
               const fallbackEmployee: Employee = {
                 id: firebaseUser.uid,
-                employeeId: `E-${firebaseUser.uid.slice(0, 5).toUpperCase()}`,
+                employeeId: firebaseUser.uid,
                 name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Employee',
                 email: firebaseUser.email || '',
                 designation: 'New Staff',
@@ -127,13 +127,51 @@ export default function App() {
         });
 
         // Employee Listener
-        unsubEmployee = onSnapshot(doc(db!, 'employees', firebaseUser.uid), (empSnap) => {
+        unsubEmployee = onSnapshot(doc(db!, 'employees', firebaseUser.uid), async (empSnap) => {
           if (empSnap.exists()) {
             employeeDocFound = true;
             setRole('EMPLOYEE');
             setEmployeeData({ id: empSnap.id, ...empSnap.data() } as Employee);
             setLoading(false);
           } else {
+            // Try searching by email if not found by UID
+            try {
+              const { query, collection, where, getDocs, limit } = await import('firebase/firestore');
+              const q = query(collection(db!, 'employees'), where('email', '==', firebaseUser.email), limit(1));
+              const emailSnap = await getDocs(q);
+              
+              if (!emailSnap.empty) {
+                const empDoc = emailSnap.docs[0];
+                employeeDocFound = true;
+                setRole('EMPLOYEE');
+                setEmployeeData({ id: empDoc.id, ...empDoc.data() } as Employee);
+                
+                // Link UID to employee record for future security rule checks
+                try {
+                  const { setDoc, deleteDoc, updateDoc, doc } = await import('firebase/firestore');
+                  
+                  if (empDoc.id !== firebaseUser.uid) {
+                    // Migrate to UID-based document for efficient rule checking
+                    await setDoc(doc(db!, 'employees', firebaseUser.uid), { 
+                      ...empDoc.data(), 
+                      userId: firebaseUser.uid 
+                    });
+                    await deleteDoc(doc(db!, 'employees', empDoc.id));
+                    console.log("Migrated employee doc to UID-based ID");
+                  } else {
+                    await updateDoc(doc(db!, 'employees', empDoc.id), { userId: firebaseUser.uid });
+                  }
+                } catch (updateErr) {
+                  console.error("Error linking UID to employee:", updateErr);
+                }
+
+                setLoading(false);
+                return;
+              }
+            } catch (err) {
+              console.error("Error searching employee by email:", err);
+            }
+
             employeeDocFound = false;
             if (checksCompleted < 2 && !employeeDocFound) {
               setTimeout(handleCheckCompletion, 500);
@@ -154,7 +192,7 @@ export default function App() {
               // Forced fallback if network is stuck
               const fallbackEmployee: Employee = {
                 id: firebaseUser.uid,
-                employeeId: `E-${firebaseUser.uid.slice(0, 5).toUpperCase()}`,
+                employeeId: firebaseUser.uid,
                 name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Employee',
                 email: firebaseUser.email || '',
                 designation: 'New Staff',

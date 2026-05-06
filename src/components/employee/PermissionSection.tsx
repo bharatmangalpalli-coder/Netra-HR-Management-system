@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { Employee, PermissionRequest } from '../../types';
 import { collection, query, where, getDocs, addDoc, orderBy, limit, Timestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, auth } from '../../lib/firebase';
 import { getTodayDate } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
@@ -98,6 +98,7 @@ export default function PermissionSection({ employee, onBack }: Props) {
       const empId = employee.employeeId || employee.id;
       const newRequest = {
         employeeId: empId,
+        userId: auth?.currentUser?.uid, // Add UID for security rules
         employeeName: employee.name,
         date,
         timeSlot: `${timeFrom} - ${timeTo}`,
