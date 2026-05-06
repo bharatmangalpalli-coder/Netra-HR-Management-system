@@ -52,13 +52,16 @@ export default function SalarySection({ employee, onBack }: Props) {
     const doc = new jsPDF();
     
     // Header
-    doc.setFontSize(22);
+    doc.setFontSize(20);
     doc.setTextColor(37, 99, 235);
-    doc.text('SalaryCalc - Salary Slip', 105, 20, { align: 'center' });
+    doc.text('Netra Consultancy and Services', 105, 18, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.setTextColor(100);
+    doc.text('Salary Slip', 105, 28, { align: 'center' });
     
     doc.setFontSize(12);
-    doc.setTextColor(100);
-    doc.text(`Month: ${record.month}`, 105, 30, { align: 'center' });
+    doc.text(`Month: ${record.month}`, 105, 36, { align: 'center' });
     
     // Employee Info
     doc.line(20, 40, 190, 40);
