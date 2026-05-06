@@ -9,11 +9,14 @@ import {
   LogOut,
   Bell,
   Menu,
-  X
+  Clock,
+  X,
+  ArrowLeft
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import Logo from '../ui/Logo';
+import SignOutModal from '../ui/SignOutModal';
 
 // Admin Views
 import DashboardOverview from './DashboardOverview';
@@ -22,17 +25,39 @@ import AttendanceManagement from './AttendanceManagement';
 import LeaveManagement from './LeaveManagement';
 import TaskManagement from './TaskManagement';
 import SalaryManagement from './SalaryManagement';
+import PermissionManagement from './PermissionManagement';
 
-type View = 'dashboard' | 'employees' | 'attendance' | 'leaves' | 'tasks' | 'salary';
+type View = 'dashboard' | 'employees' | 'attendance' | 'leaves' | 'tasks' | 'salary' | 'permissions';
 
 export default function AdminDashboard() {
   const [activeView, setActiveView] = useState<View>('dashboard');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setWindowWidth(width);
+      if (width >= 1024) {
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+      }
+    };
+    
+    // Initial check
+    handleResize();
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'employees', label: 'Employees', icon: Users },
     { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
+    { id: 'permissions', label: 'Permissions', icon: Clock },
     { id: 'leaves', label: 'Leave Requests', icon: FileText },
     { id: 'tasks', label: 'Task Management', icon: CheckSquare },
     { id: 'salary', label: 'Salary & Payroll', icon: IndianRupee },
@@ -46,6 +71,7 @@ export default function AdminDashboard() {
       case 'leaves': return <LeaveManagement />;
       case 'tasks': return <TaskManagement />;
       case 'salary': return <SalaryManagement />;
+      case 'permissions': return <PermissionManagement />;
       default: return <DashboardOverview />;
     }
   };
@@ -69,13 +95,13 @@ export default function AdminDashboard() {
       <motion.aside 
         initial={false}
         animate={{ 
-          width: isSidebarOpen ? 280 : (window.innerWidth < 1024 ? 0 : 80),
-          x: isSidebarOpen || window.innerWidth >= 1024 ? 0 : -280
+          width: isSidebarOpen ? 280 : (windowWidth < 1024 ? 0 : 80),
+          x: isSidebarOpen || windowWidth >= 1024 ? 0 : -280
         }}
-        className={`fixed lg:relative bg-white border-r border-slate-200 flex flex-col z-30 h-full transition-all duration-300 ease-in-out ${!isSidebarOpen && window.innerWidth < 1024 ? 'pointer-events-none' : ''}`}
+        className={`fixed lg:relative bg-white border-r border-slate-200 flex flex-col z-30 h-full transition-all duration-300 ease-in-out ${!isSidebarOpen && windowWidth < 1024 ? 'pointer-events-none' : ''}`}
       >
         <div className="p-6 flex items-center justify-between">
-          {(isSidebarOpen || window.innerWidth >= 1024) && (
+          {isSidebarOpen && (
             <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap">
               <Logo size="sm" />
               <span className="font-bold text-xl text-slate-800">Netra HRMS</span>
@@ -95,7 +121,7 @@ export default function AdminDashboard() {
               key={item.id}
               onClick={() => {
                 setActiveView(item.id as View);
-                if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                if (windowWidth < 1024) setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                 activeView === item.id 
@@ -104,18 +130,18 @@ export default function AdminDashboard() {
               }`}
             >
               <item.icon className="w-5 h-5 min-w-[20px]" />
-              {(isSidebarOpen || window.innerWidth >= 1024) && <span className="font-medium whitespace-nowrap">{item.label}</span>}
+              {isSidebarOpen && <span className="font-medium whitespace-nowrap">{item.label}</span>}
             </button>
           ))}
         </nav>
 
         <div className="p-4 border-t border-slate-100">
           <button 
-            onClick={() => auth.signOut()}
+            onClick={() => setShowLogoutModal(true)}
             className="w-full flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-50 transition-all"
           >
             <LogOut className="w-5 h-5 min-w-[20px]" />
-            {(isSidebarOpen || window.innerWidth >= 1024) && <span className="font-medium">Logout</span>}
+            {isSidebarOpen && <span className="font-medium">Logout</span>}
           </button>
         </div>
       </motion.aside>
@@ -124,19 +150,35 @@ export default function AdminDashboard() {
       <main className="flex-1 flex flex-col overflow-hidden w-full">
         {/* Header */}
         <header className="h-16 bg-white border-b border-slate-200 px-4 lg:px-8 flex items-center justify-between shrink-0 sticky top-0 z-10">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 lg:gap-4">
             <button 
               onClick={() => setIsSidebarOpen(true)}
               className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 lg:hidden"
             >
               <Menu className="w-6 h-6" />
             </button>
+            {activeView !== 'dashboard' && (
+              <button 
+                onClick={() => setActiveView('dashboard')}
+                className="p-2 bg-slate-50 border border-slate-100 rounded-xl text-slate-500 hover:bg-slate-100 active:scale-95 transition-all shadow-sm flex items-center justify-center"
+                title="Back to Dashboard"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
             <h2 className="text-lg lg:text-xl font-bold text-slate-800 capitalize truncate">
               {activeView.replace('-', ' ')}
             </h2>
           </div>
           
           <div className="flex items-center gap-2 lg:gap-4">
+            <button 
+              onClick={() => setShowLogoutModal(true)}
+              className="p-2 text-slate-400 hover:text-red-500 lg:hidden"
+              title="Logout"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
             <button className="p-2 text-slate-400 hover:text-slate-600 relative">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
@@ -169,6 +211,12 @@ export default function AdminDashboard() {
           </AnimatePresence>
         </div>
       </main>
+
+      <SignOutModal 
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={() => auth.signOut()}
+      />
     </div>
   );
 }

@@ -13,12 +13,14 @@ import { db } from '../../lib/firebase';
 import { formatCurrency } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
 import toast from 'react-hot-toast';
+import PageHeader from '../ui/PageHeader';
 
 interface Props {
   employee: Employee;
+  onBack: () => void;
 }
 
-export default function SalarySection({ employee }: Props) {
+export default function SalarySection({ employee, onBack }: Props) {
   const [records, setRecords] = useState<SalaryRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -153,7 +155,11 @@ export default function SalarySection({ employee }: Props) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold text-slate-800 px-1">Salary Slips</h2>
+      <PageHeader 
+        title="Salary & Payroll" 
+        subtitle="Financial History" 
+        onBack={onBack} 
+      />
 
       {/* Latest Salary Card */}
       {records.length > 0 && (

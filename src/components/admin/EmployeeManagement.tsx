@@ -32,6 +32,7 @@ export default function EmployeeManagement() {
   
   // Form State
   const [formData, setFormData] = useState({
+    employeeId: '',
     name: '',
     email: '', // Added for auth
     password: 'password123', // Default password
@@ -74,6 +75,7 @@ export default function EmployeeManagement() {
       if (isEditMode && editingId) {
         const empRef = doc(db, 'employees', editingId);
         await updateDoc(empRef, {
+          employeeId: formData.employeeId,
           name: formData.name,
           mobile: formData.mobile,
           address: formData.address,
@@ -89,7 +91,7 @@ export default function EmployeeManagement() {
         });
         toast.success('Employee updated successfully');
       } else {
-        const employeeId = `EMP${String(employees.length + 1).padStart(3, '0')}`;
+        const employeeId = formData.employeeId || `EMP${String(employees.length + 1).padStart(3, '0')}`;
         const newEmployee = {
           employeeId,
           name: formData.name,
@@ -123,6 +125,7 @@ export default function EmployeeManagement() {
 
   const resetForm = () => {
     setFormData({
+      employeeId: '',
       name: '', email: '', password: 'password123', mobile: '', address: '', aadhaar: '',
       joiningDate: new Date().toISOString().split('T')[0], exitDate: '', designation: '', monthlySalary: 0, role: 'EMPLOYEE',
       shiftStart: '09:00', shiftEnd: '18:00', isFlexibleShift: false
@@ -133,6 +136,7 @@ export default function EmployeeManagement() {
 
   const handleEdit = (emp: Employee) => {
     setFormData({
+      employeeId: emp.employeeId || '',
       name: emp.name || '',
       email: (emp as any).email || '',
       password: 'password123',
@@ -478,6 +482,17 @@ export default function EmployeeManagement() {
               </div>
               <form onSubmit={handleAddEmployee} className="p-6 lg:p-8 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Employee ID</label>
+                    <input 
+                      required
+                      type="text" 
+                      value={formData.employeeId || ''}
+                      onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
+                      className="input-field"
+                      placeholder="EMP001"
+                    />
+                  </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Full Name</label>
                     <input 

@@ -10,8 +10,9 @@ import SalarySection from './SalarySection';
 import LeaveSection from './LeaveSection';
 import TaskSection from './TaskSection';
 import ProfileSection from './ProfileSection';
+import PermissionSection from './PermissionSection';
 
-type Section = 'home' | 'attendance' | 'salary' | 'leave' | 'tasks' | 'profile';
+type Section = 'home' | 'attendance' | 'salary' | 'leave' | 'tasks' | 'profile' | 'permission';
 
 interface Props {
   employee: Employee;
@@ -21,13 +22,16 @@ export default function EmployeeDashboard({ employee }: Props) {
   const [activeSection, setActiveSection] = useState<Section>('home');
 
   const renderSection = () => {
+    const onBack = () => setActiveSection('home');
+    
     switch (activeSection) {
       case 'home': return <HomeSection employee={employee} onNavigate={(s: any) => setActiveSection(s)} />;
-      case 'attendance': return <AttendanceSection employee={employee} />;
-      case 'salary': return <SalarySection employee={employee} />;
-      case 'leave': return <LeaveSection employee={employee} />;
-      case 'tasks': return <TaskSection employee={employee} />;
-      case 'profile': return <ProfileSection employee={employee} />;
+      case 'attendance': return <AttendanceSection employee={employee} onBack={onBack} />;
+      case 'salary': return <SalarySection employee={employee} onBack={onBack} />;
+      case 'leave': return <LeaveSection employee={employee} onBack={onBack} />;
+      case 'tasks': return <TaskSection employee={employee} onBack={onBack} />;
+      case 'profile': return <ProfileSection employee={employee} onBack={onBack} />;
+      case 'permission': return <PermissionSection employee={employee} onBack={onBack} />;
       default: return <HomeSection employee={employee} onNavigate={(s: any) => setActiveSection(s)} />;
     }
   };

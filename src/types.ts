@@ -18,6 +18,9 @@ export interface Employee {
   shiftStart?: string; // HH:mm
   shiftEnd?: string;   // HH:mm
   isFlexibleShift?: boolean;
+  bankName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
 }
 
 export interface Attendance {
@@ -27,17 +30,29 @@ export interface Attendance {
   date: string; // YYYY-MM-DD
   inTime: string | null;
   outTime: string | null;
-  breakInTime?: string | null;
-  breakOutTime?: string | null;
+  lunchOutTime?: string | null;
+  lunchInTime?: string | null;
   location?: {
     lat: number;
     lng: number;
   };
   selfieUrl?: string;
   outSelfieUrl?: string;
-  breakInSelfieUrl?: string;
-  breakOutSelfieUrl?: string;
-  status: 'present' | 'absent' | 'late';
+  lunchOutSelfieUrl?: string;
+  lunchInSelfieUrl?: string;
+  status: 'present' | 'absent' | 'half-day' | 'late';
+  permissionUsed?: boolean;
+}
+
+export interface PermissionRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  timeSlot: string; // e.g. "10:00 AM - 11:00 AM"
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  appliedAt: string;
 }
 
 export interface LeaveRequest {
@@ -79,6 +94,9 @@ export interface SalaryRecord {
   month: string; // YYYY-MM
   workingDays: number;
   presentDays: number;
+  actualAttendance?: number;
+  paidLeaves?: number;
+  lwpDays?: number;
   absentDays: number;
   perDaySalary: number;
   baseSalary: number; // Monthly fixed salary

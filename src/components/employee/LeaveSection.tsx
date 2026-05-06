@@ -7,22 +7,27 @@ import {
   CheckCircle2, 
   XCircle, 
   Clock,
-  ChevronRight
+  ChevronRight,
+  AlertCircle
 } from 'lucide-react';
 import { Employee, LeaveRequest } from '../../types';
 import { collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
+import PageHeader from '../ui/PageHeader';
 
 interface Props {
   employee: Employee;
+  onBack: () => void;
 }
 
-export default function LeaveSection({ employee }: Props) {
+export default function LeaveSection({ employee, onBack }: Props) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  const [monthlyUsage, setMonthlyUsage] = useState(0);
   
   const [formData, setFormData] = useState({
     type: 'Casual' as any,
@@ -33,7 +38,28 @@ export default function LeaveSection({ employee }: Props) {
 
   useEffect(() => {
     fetchLeaves();
+    fetchMonthlyUsage();
   }, [employee.id]);
+
+  const fetchMonthlyUsage = async () => {
+    try {
+      const now = new Date();
+      const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+      const empId = employee.employeeId || employee.id;
+      const q = query(
+        collection(db, 'leaves'),
+        where('employeeId', '==', empId),
+        where('status', '==', 'approved'),
+        where('startDate', '>=', first),
+        where('startDate', '<=', last)
+      );
+      const snap = await getDocs(q);
+      setMonthlyUsage(snap.size);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchLeaves = async () => {
     setLoading(true);
@@ -59,8 +85,13 @@ export default function LeaveSection({ employee }: Props) {
     e.preventDefault();
     setLoading(true);
     try {
+      // Rule: Each employee is allowed 1 Full-Day Leave per month.
+      // If they request more, it's marked as Unpaid (LWP).
+      const isExtra = monthlyUsage >= 1;
+      
       const newLeave = {
         ...formData,
+        type: isExtra ? 'LWP (Unpaid)' : formData.type,
         employeeId: employee.employeeId || employee.id,
         employeeName: employee.name,
         status: 'pending',
@@ -68,9 +99,10 @@ export default function LeaveSection({ employee }: Props) {
       };
 
       await addDoc(collection(db, 'leaves'), newLeave);
-      toast.success('Leave applied successfully');
+      toast.success(isExtra ? 'LWP Leave Applied (Limit Reached)' : 'Leave applied successfully');
       setIsModalOpen(false);
       fetchLeaves();
+      fetchMonthlyUsage();
       setFormData({ type: 'Casual', startDate: '', endDate: '', reason: '' });
     } catch (error) {
       toast.error('Failed to apply for leave');
@@ -81,11 +113,15 @@ export default function LeaveSection({ employee }: Props) {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between px-2">
-        <h2 className="text-xl font-bold text-slate-800">Leave Requests</h2>
+      <div className="flex items-center justify-between">
+        <PageHeader 
+          title="Leave Requests" 
+          subtitle="Time Off Management" 
+          onBack={onBack} 
+        />
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-100"
+          className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-100 mb-6"
         >
           <Plus className="w-5 h-5" />
         </button>
@@ -146,6 +182,15 @@ export default function LeaveSection({ employee }: Props) {
                   </button>
                 </div>
                 <form onSubmit={handleApply} className="space-y-6">
+                  {monthlyUsage >= 1 && (
+                    <div className="bg-amber-50 border border-amber-100 p-3 rounded-2xl flex gap-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-amber-900">Monthly Limit Reached</p>
+                        <p className="text-[10px] text-amber-700 font-medium">You have already used your 1-day paid leave for this month. This request will be marked as <span className="font-bold">LWP (Unpaid)</span>.</p>
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Leave Type</label>
                     <div className="grid grid-cols-3 gap-3">

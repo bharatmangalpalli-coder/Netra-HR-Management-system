@@ -113,6 +113,16 @@ export default function EmployeeAttendanceCalendar({ employeeId, employeeName, o
                   <Clock className="w-2 h-2 text-emerald-500" />
                   {att.inTime}
                 </div>
+                {(att.lunchOutTime || att.lunchInTime) && (
+                  <div className="flex flex-col gap-0.5 border-t border-slate-50 mt-0.5 pt-0.5">
+                    <div className="flex items-center gap-1 text-[8px] text-indigo-500 font-medium">
+                      L-OUT: {att.lunchOutTime || '--:--'}
+                    </div>
+                    <div className="flex items-center gap-1 text-[8px] text-purple-500 font-medium">
+                      L-IN: {att.lunchInTime || '--:--'}
+                    </div>
+                  </div>
+                )}
                 {att.outTime && (
                   <div className="flex items-center gap-1 text-[9px] text-slate-500">
                     <Clock className="w-2 h-2 text-amber-500" />

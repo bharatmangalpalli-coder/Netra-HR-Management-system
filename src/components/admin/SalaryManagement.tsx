@@ -94,8 +94,9 @@ export default function SalaryManagement() {
     doc.text('Attendance Summary', 120, 50);
     doc.setFont('helvetica', 'normal');
     doc.text(`Total Working Days: ${record.workingDays}`, 120, 60);
-    doc.text(`Present Days: ${record.presentDays}`, 120, 70);
-    doc.text(`Absent Days: ${record.absentDays}`, 120, 80);
+    doc.text(`Present Days: ${record.actualAttendance || record.presentDays}`, 120, 70);
+    doc.text(`Paid Leaves: ${record.paidLeaves || 0}`, 120, 80);
+    doc.text(`Absent / LWP: ${record.absentDays}`, 120, 90);
 
     // Salary Details
     doc.setFont('helvetica', 'bold');
@@ -178,13 +179,23 @@ export default function SalaryManagement() {
       const [year, month] = selectedMonth.split('-').map(Number);
       const totalWorkingDays = getMonthWorkingDays(year, month);
 
-      // Fetch all attendance for this month
+      // Fetch all attendance and approved leaves for this month
+      const firstDayStr = `${selectedMonth}-01`;
+      const lastDayStr = `${selectedMonth}-31`;
       const attendanceSnap = await getDocs(query(
         collection(db, 'attendance'),
-        where('date', '>=', `${selectedMonth}-01`),
-        where('date', '<=', `${selectedMonth}-31`)
+        where('date', '>=', firstDayStr),
+        where('date', '<=', lastDayStr)
       ));
       const allAttendance = attendanceSnap.docs.map(doc => doc.data() as Attendance);
+
+      const leavesSnap = await getDocs(query(
+        collection(db, 'leaves'),
+        where('status', '==', 'approved'),
+        where('startDate', '>=', firstDayStr),
+        where('startDate', '<=', lastDayStr)
+      ));
+      const allApprovedLeaves = leavesSnap.docs.map(doc => doc.data() as any);
 
       for (const emp of employees) {
         const empId = emp.employeeId || emp.id;
@@ -193,23 +204,36 @@ export default function SalaryManagement() {
         // Check if already generated
         if (salaryRecords.some(r => r.employeeId === empId)) continue;
         
-        // Count present days for this employee
+        // Count present days
         const empAttendance = allAttendance.filter(a => a.employeeId === empId);
-        const presentDays = empAttendance.filter(a => a.status === 'present' || a.status === 'late').length;
-        const absentDays = totalWorkingDays - presentDays;
+        const fullDays = empAttendance.filter(a => a.status === 'present' || a.status === 'late').length;
+        const halfDays = empAttendance.filter(a => a.status === 'half-day').length;
+        const actualAttendanceDays = fullDays + (halfDays * 0.5);
+
+        // Calculate Paid Leaves Allowance (1 day per month)
+        const empLeaves = allApprovedLeaves.filter(l => l.employeeId === empId);
+        const paidLeavesUsed = empLeaves.length > 0 ? 1 : 0; // At most 1 day is paid
+        const lwpDaysCount = empLeaves.length > 1 ? empLeaves.length - 1 : 0; // Anything beyond 1 is LWP
+
+        // Effective Present Days = Attendance Days + Paid Leaves (max 1)
+        const effectivePresentDays = actualAttendanceDays + paidLeavesUsed;
+        const absentDays = totalWorkingDays - (fullDays + halfDays + paidLeavesUsed);
 
         // Formula: Per Day Salary = Monthly Salary / Total Working Days
         const monthlySalary = emp.monthlySalary || 0;
-        const perDaySalary = monthlySalary / totalWorkingDays;
+        const perDaySalary = totalWorkingDays > 0 ? monthlySalary / totalWorkingDays : 0;
         
-        // Formula: Calculated Salary = Per Day Salary * Present Days
-        const calculatedSalary = presentDays === 0 ? 0 : perDaySalary * presentDays;
+        // Final Calculated Salary
+        const calculatedSalary = effectivePresentDays === 0 ? 0 : perDaySalary * effectivePresentDays;
 
         const record = {
           employeeId: empId,
           month: selectedMonth,
           workingDays: totalWorkingDays,
-          presentDays: presentDays,
+          presentDays: effectivePresentDays,
+          actualAttendance: actualAttendanceDays,
+          paidLeaves: paidLeavesUsed,
+          lwpDays: lwpDaysCount,
           absentDays: absentDays < 0 ? 0 : absentDays,
           perDaySalary: perDaySalary,
           baseSalary: monthlySalary,
@@ -423,9 +447,10 @@ export default function SalaryManagement() {
                     <td className="px-6 py-4">
                       {record ? (
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-emerald-600 font-bold">P: {record.presentDays}</span>
-                            <span className="text-red-500 font-bold">A: {record.absentDays}</span>
+                          <div className="flex flex-col text-[10px] gap-0.5">
+                            <span className="text-emerald-600 font-bold">Present: {record.actualAttendance || record.presentDays}d</span>
+                            <span className="text-blue-600 font-bold">Paid Leave: {record.paidLeaves || 0}d</span>
+                            <span className="text-red-500 font-bold">Absent/LWP: {record.absentDays}d</span>
                           </div>
                           <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                             <div 
@@ -610,20 +635,20 @@ export default function SalaryManagement() {
       {/* Edit Salary Modal */}
       <AnimatePresence>
         {isEditModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              className="bg-white rounded-t-[2.5rem] sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden h-[90vh] sm:h-auto"
             >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white">
-                <h3 className="text-xl font-bold">Edit Salary Record</h3>
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-600 text-white shrink-0">
+                <h3 className="text-lg sm:text-xl font-bold">Edit Salary Record</h3>
                 <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                   <X className="w-6 h-6" />
                 </button>
               </div>
-              <form onSubmit={handleUpdateRecord} className="p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+              <form onSubmit={handleUpdateRecord} className="p-6 sm:p-8 space-y-6 overflow-y-auto h-full sm:max-h-[80vh] pb-32 sm:pb-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Attendance Section */}
                   <div className="space-y-4">

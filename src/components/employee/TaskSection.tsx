@@ -10,15 +10,17 @@ import {
 } from 'lucide-react';
 import { Employee, Task, TaskComment } from '../../types';
 import { collection, query, where, getDocs, updateDoc, doc, arrayUnion, orderBy } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
+import PageHeader from '../ui/PageHeader';
 
 interface Props {
   employee: Employee;
+  onBack: () => void;
 }
 
-export default function TaskSection({ employee }: Props) {
+export default function TaskSection({ employee, onBack }: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -49,13 +51,14 @@ export default function TaskSection({ employee }: Props) {
   };
 
   const handleComplete = async (id: string) => {
+    const path = `tasks/${id}`;
     try {
       await updateDoc(doc(db, 'tasks', id), { status: 'completed' });
       toast.success('Task marked as completed!');
       fetchTasks();
       if (selectedTask?.id === id) setSelectedTask(null);
     } catch (error) {
-      toast.error('Failed to update task');
+      handleFirestoreError(error, OperationType.UPDATE, path);
     }
   };
 
@@ -63,6 +66,7 @@ export default function TaskSection({ employee }: Props) {
     e.preventDefault();
     if (!comment || !selectedTask) return;
     
+    const path = `tasks/${selectedTask.id}`;
     try {
       const newComment: TaskComment = {
         id: Date.now().toString(),
@@ -81,7 +85,7 @@ export default function TaskSection({ employee }: Props) {
       // Update local selected task
       setSelectedTask({...selectedTask, comments: [...selectedTask.comments, newComment]});
     } catch (error) {
-      toast.error('Failed to add comment');
+      handleFirestoreError(error, OperationType.UPDATE, path);
     }
   };
 
@@ -89,7 +93,11 @@ export default function TaskSection({ employee }: Props) {
 
   return (
     <div className="space-y-8">
-      <h2 className="text-xl font-bold text-slate-800 px-2">Assigned Tasks</h2>
+      <PageHeader 
+        title="Assigned Tasks" 
+        subtitle="Current Workload" 
+        onBack={onBack} 
+      />
 
       <div className="space-y-4">
         {loading ? (

@@ -15,22 +15,24 @@ import {
 } from 'lucide-react';
 import { Employee, Attendance } from '../../types';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, limit, orderBy } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { getTodayDate } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
+import PageHeader from '../ui/PageHeader';
 
 interface Props {
   employee: Employee;
+  onBack: () => void;
 }
 
-export default function AttendanceSection({ employee }: Props) {
+export default function AttendanceSection({ employee, onBack }: Props) {
   const [todayAttendance, setTodayAttendance] = useState<Attendance | null>(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<Attendance[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'in' | 'out' | 'break-in' | 'break-out' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'in' | 'out' | 'lunch-in' | 'lunch-out' | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
@@ -76,7 +78,7 @@ export default function AttendanceSection({ employee }: Props) {
     }
   };
 
-  const handleActionClick = (action: 'in' | 'out' | 'break-in' | 'break-out') => {
+  const handleActionClick = (action: 'in' | 'out' | 'lunch-in' | 'lunch-out') => {
     setPendingAction(action);
     setShowCamera(true);
     setCapturedImage(null);
@@ -123,14 +125,29 @@ export default function AttendanceSection({ employee }: Props) {
     }
   };
 
-  const updateAttendance = async (action: 'in' | 'out' | 'break-in' | 'break-out', selfie: string) => {
+  const updateAttendance = async (action: 'in' | 'out' | 'lunch-in' | 'lunch-out', selfie: string) => {
     setLoading(true);
     try {
       const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
       const empId = employee.employeeId || employee.id;
 
       if (action === 'in') {
+        const shiftStart = employee.shiftStart || '09:00';
+        const [targetH, targetM] = shiftStart.split(':').map(Number);
+        const shiftStartDate = new Date();
+        shiftStartDate.setHours(targetH, targetM, 0);
+        
+        const lateLimit = new Date(shiftStartDate.getTime() + 30 * 60000);
+        let status: 'present' | 'half-day' | 'late' = 'present';
+
+        if (now > lateLimit) {
+          status = 'half-day';
+          toast.error('Logging in after 30 mins grace period. Marked as Half Day.');
+        } else if (now > shiftStartDate) {
+          status = 'late';
+        }
+
         // Get Location
         let location = { lat: 0, lng: 0 };
         try {
@@ -152,16 +169,16 @@ export default function AttendanceSection({ employee }: Props) {
           date: getTodayDate(),
           inTime: timeStr,
           outTime: null,
-          breakInTime: null,
-          breakOutTime: null,
+          lunchOutTime: null,
+          lunchInTime: null,
           location,
           selfieUrl: selfie,
-          status: 'present',
+          status,
           markedAt: new Date().toISOString()
         };
 
         await addDoc(collection(db, 'attendance'), newAttendance);
-        toast.success('Clocked in successfully');
+        toast.success(`Clocked in successfully as ${status.replace('-', ' ')}`);
       } else {
         if (!todayAttendance) return;
 
@@ -170,13 +187,13 @@ export default function AttendanceSection({ employee }: Props) {
           updates.outTime = timeStr;
           updates.outSelfieUrl = selfie;
         }
-        if (action === 'break-in') {
-          updates.breakInTime = timeStr;
-          updates.breakInSelfieUrl = selfie;
+        if (action === 'lunch-out') {
+          updates.lunchOutTime = timeStr;
+          updates.lunchOutSelfieUrl = selfie;
         }
-        if (action === 'break-out') {
-          updates.breakOutTime = timeStr;
-          updates.breakOutSelfieUrl = selfie;
+        if (action === 'lunch-in') {
+          updates.lunchInTime = timeStr;
+          updates.lunchInSelfieUrl = selfie;
         }
 
         await updateDoc(doc(db, 'attendance', todayAttendance.id), updates);
@@ -189,7 +206,8 @@ export default function AttendanceSection({ employee }: Props) {
       setPendingAction(null);
       setCapturedImage(null);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update attendance');
+      const path = todayAttendance ? `attendance/${todayAttendance.id}` : 'attendance';
+      handleFirestoreError(error, OperationType.UPDATE, path);
     } finally {
       setLoading(false);
     }
@@ -198,17 +216,21 @@ export default function AttendanceSection({ employee }: Props) {
   const getStatusDisplay = () => {
     if (!todayAttendance) return 'Not Clocked In';
     if (todayAttendance.outTime) return 'Shift Completed';
-    if (todayAttendance.breakInTime && !todayAttendance.breakOutTime) return 'On Break';
+    if (todayAttendance.lunchOutTime && !todayAttendance.lunchInTime) return 'On Lunch Break';
     return 'Currently Working';
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between px-1">
-        <h2 className="text-xl font-bold text-slate-800">Attendance</h2>
+      <div className="flex items-center justify-between">
+        <PageHeader 
+          title="Attendance" 
+          subtitle="Daily Tracking" 
+          onBack={onBack} 
+        />
         <button 
           onClick={() => setShowHistory(!showHistory)}
-          className="p-2 bg-white rounded-xl border border-slate-100 text-slate-500 shadow-sm"
+          className="p-2.5 bg-white rounded-xl border border-slate-100 text-slate-500 shadow-sm active:scale-95 transition-all mb-6"
         >
           <History className="w-5 h-5" />
         </button>
@@ -242,23 +264,23 @@ export default function AttendanceSection({ employee }: Props) {
 
               {todayAttendance && !todayAttendance.outTime && (
                 <>
-                  {(!todayAttendance.breakInTime || todayAttendance.breakOutTime) ? (
+                  {(!todayAttendance.lunchOutTime || todayAttendance.lunchInTime) ? (
                     <button 
-                      onClick={() => handleActionClick('break-in')}
+                      onClick={() => handleActionClick('lunch-out')}
                       disabled={loading}
                       className="btn bg-amber-500 text-white shadow-lg shadow-amber-100 flex items-center justify-center gap-3 text-lg h-14"
                     >
                       <RefreshCw className="w-6 h-6" />
-                      {loading ? 'Processing...' : 'Start Break'}
+                      {loading ? 'Processing...' : 'Lunch OUT'}
                     </button>
                   ) : (
                     <button 
-                      onClick={() => handleActionClick('break-out')}
+                      onClick={() => handleActionClick('lunch-in')}
                       disabled={loading}
                       className="btn bg-blue-500 text-white shadow-lg shadow-blue-100 flex items-center justify-center gap-3 text-lg h-14"
                     >
                       <RefreshCw className="w-6 h-6" />
-                      {loading ? 'Processing...' : 'End Break'}
+                      {loading ? 'Processing...' : 'Lunch IN'}
                     </button>
                   )}
                   
@@ -292,12 +314,12 @@ export default function AttendanceSection({ employee }: Props) {
                   <p className="text-sm font-bold text-slate-800">{todayAttendance.outTime || '--:--'}</p>
                 </div>
                 <div className="text-left">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Break In</p>
-                  <p className="text-sm font-bold text-slate-800">{todayAttendance.breakInTime || '--:--'}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lunch Out</p>
+                  <p className="text-sm font-bold text-slate-800">{todayAttendance.lunchOutTime || '--:--'}</p>
                 </div>
                 <div className="text-left">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Break Out</p>
-                  <p className="text-sm font-bold text-slate-800">{todayAttendance.breakOutTime || '--:--'}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lunch In</p>
+                  <p className="text-sm font-bold text-slate-800">{todayAttendance.lunchInTime || '--:--'}</p>
                 </div>
               </div>
             )}

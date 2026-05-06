@@ -5,6 +5,7 @@ import {
   FileText, 
   CheckSquare, 
   TrendingUp,
+  Clock,
   ArrowUpRight,
   ArrowDownRight
 } from 'lucide-react';
@@ -47,6 +48,7 @@ export default function DashboardOverview() {
     totalEmployees: 0,
     todayAttendance: 0,
     pendingLeaves: 0,
+    pendingPermissions: 0,
     pendingTasks: 0
   });
   const [recentEmployees, setRecentEmployees] = useState<Employee[]>([]);
@@ -56,6 +58,7 @@ export default function DashboardOverview() {
       try {
         const employeesSnap = await getDocs(collection(db, 'employees'));
         const leavesSnap = await getDocs(query(collection(db, 'leaves'), where('status', '==', 'pending')));
+        const permissionsSnap = await getDocs(query(collection(db, 'permissions'), where('status', '==', 'pending')));
         const tasksSnap = await getDocs(query(collection(db, 'tasks'), where('status', '==', 'pending')));
         
         // Fetch recent employees
@@ -75,6 +78,7 @@ export default function DashboardOverview() {
           totalEmployees: employeesSnap.size,
           todayAttendance: attendanceSnap.size,
           pendingLeaves: leavesSnap.size,
+          pendingPermissions: permissionsSnap.size,
           pendingTasks: tasksSnap.size
         });
       } catch (error) {
@@ -88,27 +92,28 @@ export default function DashboardOverview() {
   const statCards = [
     { label: 'Total Employees', value: stats.totalEmployees, icon: Users, color: 'blue', trend: '+2 this month' },
     { label: 'Today Attendance', value: stats.todayAttendance, icon: CalendarCheck, color: 'emerald', trend: '90% present' },
-    { label: 'Pending Leaves', value: stats.pendingLeaves, icon: FileText, color: 'amber', trend: '3 urgent' },
-    { label: 'Pending Tasks', value: stats.pendingTasks, icon: CheckSquare, color: 'purple', trend: '12 due today' },
+    { label: 'Pending Leaves', value: stats.pendingLeaves, icon: FileText, color: 'emerald', trend: `${stats.pendingLeaves} urgent` },
+    { label: 'Short Permissions', value: stats.pendingPermissions, icon: Clock, color: 'amber', trend: 'Monthly limit: 2' },
+    { label: 'Pending Tasks', value: stats.pendingTasks, icon: CheckSquare, color: 'purple', trend: 'Next 24 hours' },
   ];
 
   return (
     <div className="space-y-6 lg:space-y-8">
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 lg:gap-6">
         {statCards.map((card, i) => (
           <div key={i} className="bg-white p-4 lg:p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-3 lg:mb-4">
+            <div className="flex items-start justify-between mb-2 lg:mb-4">
               <div className={`p-2 lg:p-3 rounded-xl bg-${card.color}-50 text-${card.color}-600`}>
-                <card.icon className="w-5 h-5 lg:w-6 lg:h-6" />
+                <card.icon className="w-4 h-4 lg:w-6 lg:h-6" />
               </div>
-              <span className={`hidden sm:flex text-[10px] lg:text-xs font-medium px-2 py-1 rounded-full bg-${card.color === 'emerald' ? 'emerald' : 'blue'}-50 text-${card.color === 'emerald' ? 'emerald' : 'blue'}-600 items-center gap-1`}>
-                <TrendingUp className="w-3 h-3" />
+              <span className={`hidden sm:flex text-[9px] lg:text-xs font-medium px-2 py-0.5 lg:py-1 rounded-full bg-${card.color === 'emerald' ? 'emerald' : 'blue'}-50 text-${card.color === 'emerald' ? 'emerald' : 'blue'}-600 items-center gap-1`}>
+                <TrendingUp className="w-2.5 h-2.5 lg:w-3 lg:h-3" />
                 {card.trend}
               </span>
             </div>
-            <h3 className="text-slate-500 text-[10px] lg:text-sm font-medium uppercase tracking-wider">{card.label}</h3>
-            <p className="text-lg lg:text-2xl font-bold text-slate-800 mt-0.5 lg:mt-1">{card.value}</p>
+            <h3 className="text-slate-500 text-[9px] lg:text-sm font-medium uppercase tracking-wider truncate">{card.label}</h3>
+            <p className="text-base lg:text-2xl font-bold text-slate-800 mt-0.5 lg:mt-1">{card.value}</p>
           </div>
         ))}
       </div>

@@ -106,7 +106,7 @@ export default function AttendanceManagement() {
       return toast.error("No data to export");
     }
     
-    const headers = ['Employee Name', 'Employee ID', 'Date', 'In Time', 'Break In', 'Break Out', 'Out Time', 'Status'];
+    const headers = ['Employee Name', 'Employee ID', 'Date', 'In Time', 'Lunch Out', 'Lunch In', 'Out Time', 'Status'];
     const csvContent = [
       headers.join(','),
       ...attendance.map(item => [
@@ -114,8 +114,8 @@ export default function AttendanceManagement() {
         item.employeeId,
         item.date,
         item.inTime || '',
-        item.breakInTime || '',
-        item.breakOutTime || '',
+        item.lunchOutTime || '',
+        item.lunchInTime || '',
         item.outTime || '',
         item.status
       ].join(','))
@@ -183,7 +183,7 @@ export default function AttendanceManagement() {
               <tr>
                 <th className="px-6 py-4 font-semibold">Employee</th>
                 <th className="px-6 py-4 font-semibold">In Time</th>
-                <th className="px-6 py-4 font-semibold">Break</th>
+                <th className="px-6 py-4 font-semibold">Lunch</th>
                 <th className="px-6 py-4 font-semibold">Out Time</th>
                 <th className="px-6 py-4 font-semibold">Location</th>
                 <th className="px-6 py-4 font-semibold">Status</th>
@@ -223,10 +223,10 @@ export default function AttendanceManagement() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1 text-[10px] text-slate-500">
                         <div className="flex items-center gap-1">
-                          <span className="font-bold text-indigo-600">IN:</span> {item.breakInTime || '--:--'}
+                          <span className="font-bold text-indigo-600">OUT:</span> {item.lunchOutTime || '--:--'}
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="font-bold text-purple-600">OUT:</span> {item.breakOutTime || '--:--'}
+                          <span className="font-bold text-purple-600">IN:</span> {item.lunchInTime || '--:--'}
                         </div>
                       </div>
                     </td>
@@ -281,40 +281,40 @@ export default function AttendanceManagement() {
                           <span className="text-[7px] font-bold text-slate-400 uppercase">In</span>
                         </div>
 
-                        {/* Break In Selfie */}
+                        {/* Lunch Out Selfie */}
                         <div className="flex flex-col items-center gap-1">
-                          {item.breakInSelfieUrl ? (
+                          {item.lunchOutSelfieUrl ? (
                             <button 
-                              onClick={() => setPreviewImage(item.breakInSelfieUrl!)}
+                              onClick={() => setPreviewImage(item.lunchOutSelfieUrl!)}
                               className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
-                              title="Break In Selfie"
+                              title="Lunch Out Selfie"
                             >
-                              <img src={item.breakInSelfieUrl} alt="B-In" className="w-full h-full object-cover" />
+                              <img src={item.lunchOutSelfieUrl} alt="L-Out" className="w-full h-full object-cover" />
                             </button>
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
                               <User className="w-4 h-4 text-slate-300" />
                             </div>
                           )}
-                          <span className="text-[7px] font-bold text-slate-400 uppercase">B-In</span>
+                          <span className="text-[7px] font-bold text-slate-400 uppercase">L-Out</span>
                         </div>
 
-                        {/* Break Out Selfie */}
+                        {/* Lunch In Selfie */}
                         <div className="flex flex-col items-center gap-1">
-                          {item.breakOutSelfieUrl ? (
+                          {item.lunchInSelfieUrl ? (
                             <button 
-                              onClick={() => setPreviewImage(item.breakOutSelfieUrl!)}
+                              onClick={() => setPreviewImage(item.lunchInSelfieUrl!)}
                               className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 hover:ring-2 hover:ring-blue-500 transition-all"
-                              title="Break Out Selfie"
+                              title="Lunch In Selfie"
                             >
-                              <img src={item.breakOutSelfieUrl} alt="B-Out" className="w-full h-full object-cover" />
+                              <img src={item.lunchInSelfieUrl} alt="L-In" className="w-full h-full object-cover" />
                             </button>
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
                               <User className="w-4 h-4 text-slate-300" />
                             </div>
                           )}
-                          <span className="text-[7px] font-bold text-slate-400 uppercase">B-Out</span>
+                          <span className="text-[7px] font-bold text-slate-400 uppercase">L-In</span>
                         </div>
 
                         {/* Clock Out Selfie */}
@@ -395,8 +395,8 @@ export default function AttendanceManagement() {
                     <p className="text-slate-800 font-bold">{item.inTime || '--:--'}</p>
                   </div>
                   <div className="bg-slate-50 p-2 rounded-xl">
-                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Break</p>
-                    <p className="text-slate-800 font-bold">{item.breakInTime || '--:--'} - {item.breakOutTime || '--:--'}</p>
+                    <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Lunch</p>
+                    <p className="text-slate-800 font-bold">{item.lunchOutTime || '--:--'} - {item.lunchInTime || '--:--'}</p>
                   </div>
                   <div className="bg-slate-50 p-2 rounded-xl">
                     <p className="text-slate-400 uppercase tracking-tighter mb-0.5">Out Time</p>
@@ -408,8 +408,8 @@ export default function AttendanceManagement() {
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
                   {[
                     { url: item.selfieUrl, label: 'In' },
-                    { url: item.breakInSelfieUrl, label: 'B-In' },
-                    { url: item.breakOutSelfieUrl, label: 'B-Out' },
+                    { url: item.lunchOutSelfieUrl, label: 'L-Out' },
+                    { url: item.lunchInSelfieUrl, label: 'L-In' },
                     { url: item.outSelfieUrl, label: 'Out' }
                   ].map((s, idx) => (
                     <div key={idx} className="flex flex-col items-center gap-1 shrink-0">

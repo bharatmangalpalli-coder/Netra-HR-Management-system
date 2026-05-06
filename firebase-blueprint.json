@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "employee": {
+      "title": "Employee",
+      "description": "Employee profile and HR data",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "designation": { "type": "string" },
+        "department": { "type": "string" },
+        "joiningDate": { "type": "string" },
+        "monthlySalary": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "bankName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "ifscCode": { "type": "string" }
+      }
+    },
+    "attendance": {
+      "title": "Attendance Record",
+      "description": "Daily attendance record with selfie verification",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "date": { "type": "string" },
+        "inTime": { "type": "string" },
+        "outTime": { "type": "string" },
+        "lunchOutTime": { "type": "string" },
+        "lunchInTime": { "type": "string" },
+        "status": { "type": "string", "enum": ["present", "absent", "half-day", "late"] },
+        "selfieUrl": { "type": "string" }
+      }
+    },
+    "permission": {
+      "title": "Permission Request",
+      "description": "Short leave permission request (1 hour)",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "date": { "type": "string" },
+        "timeSlot": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+      }
+    },
+    "branding": {
+      "title": "Branding Settings",
+      "description": "Global branding settings for the application",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string" },
+        "tagline": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "primaryColor": { "type": "string" }
+      },
+      "required": ["companyName"]
+    }
+  },
+  "firestore": {
+    "employees/{employeeId}": {
+      "schema": "employee",
+      "description": "Employee database"
+    },
+    "attendance/{attendanceId}": {
+      "schema": "attendance",
+      "description": "Attendance history"
+    },
+    "permissions/{permissionId}": {
+      "schema": "permission",
+      "description": "Permission requests"
+    },
+    "settings/branding": {
+      "schema": "branding",
+      "description": "Public branding information"
+    }
+  }
+}

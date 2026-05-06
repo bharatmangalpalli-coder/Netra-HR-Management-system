@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { handleFirestoreError, OperationType } from '../../lib/firestore-errors';
 
 interface LogoProps {
   className?: string;
@@ -27,7 +28,7 @@ export default function Logo({ className = '', size = 'md' }: LogoProps) {
         setCustomLogoUrl(settingsDoc.data().logoUrl || null);
       }
     } catch (error) {
-      console.error("Error fetching custom logo:", error);
+      handleFirestoreError(error, OperationType.GET, 'settings/branding');
     }
   };
 

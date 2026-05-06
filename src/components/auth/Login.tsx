@@ -12,6 +12,7 @@ import { motion } from 'motion/react';
 import { Phone, Mail, Lock, ArrowRight, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Logo from '../ui/Logo';
+import { handleFirestoreError, OperationType } from '../../lib/firestore-errors';
 
 export default function Login() {
   const [isRegistering, setIsRegistering] = useState(false);
@@ -36,7 +37,7 @@ export default function Login() {
         });
       }
     } catch (error) {
-      console.error("Error fetching branding:", error);
+      handleFirestoreError(error, OperationType.GET, 'settings/branding');
     }
   };
   const [method, setMethod] = useState<'phone' | 'email'>('email');

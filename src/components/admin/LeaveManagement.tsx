@@ -59,18 +59,20 @@ export default function LeaveManagement() {
   return (
     <div className="space-y-6">
       {/* Tabs */}
-      <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-fit">
-        {['pending', 'approved', 'rejected', 'all'].map((t) => (
-          <button
-            key={t}
-            onClick={() => setFilter(t as any)}
-            className={`px-6 py-2 rounded-xl text-sm font-medium transition-all capitalize ${
-              filter === t ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-fit max-w-full overflow-x-auto no-scrollbar">
+        <div className="flex shrink-0">
+          {['pending', 'approved', 'rejected', 'all'].map((t) => (
+            <button
+              key={t}
+              onClick={() => setFilter(t as any)}
+              className={`px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all capitalize whitespace-nowrap ${
+                filter === t ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Leave Requests List */}
