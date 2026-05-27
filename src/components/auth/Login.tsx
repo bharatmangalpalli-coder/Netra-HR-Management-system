@@ -27,17 +27,39 @@ export default function Login() {
 
   const fetchBranding = async () => {
     if (!db) return;
+
+    // Load from cache first for offline/quota safety & instant loading
+    const cachedBranding = localStorage.getItem('cached_branding_settings');
+    if (cachedBranding) {
+      try {
+        const parsed = JSON.parse(cachedBranding);
+        setBranding({
+          companyName: parsed.companyName || 'Netra Consultancy & E-Services',
+          tagline: parsed.tagline || 'Vision for Your Success'
+        });
+      } catch (e) {
+        // ignore JSON syntax issues
+      }
+    }
+
     try {
       const settingsDoc = await getDoc(doc(db, 'settings', 'branding'));
       if (settingsDoc.exists()) {
         const data = settingsDoc.data();
-        setBranding({
+        const info = {
           companyName: data.companyName || 'Netra Consultancy & E-Services',
           tagline: data.tagline || 'Vision for Your Success'
-        });
+        };
+        setBranding(info);
+        localStorage.setItem('cached_branding_settings', JSON.stringify(info));
       }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.GET, 'settings/branding');
+    } catch (error: any) {
+      console.warn("Could not fetch branding from Firestore:", error);
+      const isQuotaError = error.message?.includes('Quota limit exceeded') || error.code === 'resource-exhausted';
+      // Suppress handleFirestoreError for typical quota or network issues to prevent fatal loop
+      if (!isQuotaError && error.code !== 'permission-denied') {
+        handleFirestoreError(error, OperationType.GET, 'settings/branding');
+      }
     }
   };
   const [method, setMethod] = useState<'phone' | 'email'>('email');

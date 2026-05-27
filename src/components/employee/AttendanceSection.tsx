@@ -14,8 +14,28 @@ import {
   Check
 } from 'lucide-react';
 import { Employee, Attendance } from '../../types';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, limit, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
+
+// Helper to check for manual time adjustment
+const checkTimeDrift = async (): Promise<number> => {
+  try {
+    const start = Date.now();
+    const response = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC', { cache: 'no-store' });
+    const data = await response.json();
+    const serverTime = new Date(data.datetime).getTime();
+    const end = Date.now();
+    
+    // Average client time during request
+    const clientTime = (start + end) / 2;
+    const drift = Math.abs(serverTime - clientTime);
+    
+    return drift; // returns drift in milliseconds
+  } catch (error) {
+    console.error("Failed to fetch server time:", error);
+    return 0; // Fallback to 0 if API is down
+  }
+};
 import { getTodayDate } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
@@ -60,10 +80,21 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         throw new Error('Camera API not supported in this browser');
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' },
-        audio: false 
-      });
+      let stream: MediaStream;
+      try {
+        // Try with front camera first
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user' },
+          audio: false 
+        });
+      } catch (firstErr: any) {
+        console.warn('Initial camera access failed, trying fallback:', firstErr);
+        // Fallback: Try any available camera if 'user' facing mode fails
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true,
+          audio: false 
+        });
+      }
 
       if (isActive && !isActive.current) {
         stream.getTracks().forEach(track => track.stop());
@@ -189,6 +220,15 @@ export default function AttendanceSection({ employee, onBack }: Props) {
   const updateAttendance = async (action: 'in' | 'out' | 'lunch-in' | 'lunch-out', selfie: string) => {
     setLoading(true);
     try {
+      // Check for manual time setting
+      const drift = await checkTimeDrift();
+      const isTimeSpoofed = drift > 5 * 60 * 1000; // 5 minutes threshold
+      
+      if (isTimeSpoofed) {
+        console.warn("Time spoofing detected. Drift:", drift);
+        toast.error("Manual time adjustment detected. Please sync your clock with the internet.");
+      }
+
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
       const empId = employee.employeeId || employee.id;
@@ -227,7 +267,7 @@ export default function AttendanceSection({ employee, onBack }: Props) {
 
         const newAttendance = {
           employeeId: empId,
-          userId: auth?.currentUser?.uid, // Add UID for security rules
+          userId: auth?.currentUser?.uid,
           employeeName: employee.name,
           date: getTodayDate(),
           inTime: timeStr,
@@ -238,7 +278,9 @@ export default function AttendanceSection({ employee, onBack }: Props) {
           selfieUrl: selfie,
           status,
           totalHours: 0,
-          markedAt: new Date().toISOString()
+          markedAt: serverTimestamp(),
+          clientDrift: drift,
+          isManualTime: isTimeSpoofed
         };
 
         await addDoc(collection(db, 'attendance'), newAttendance);
@@ -247,7 +289,9 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         if (!todayAttendance) return;
 
         const updates: any = {
-          userId: auth?.currentUser?.uid // Ensure UID is attached to all updates
+          userId: auth?.currentUser?.uid,
+          updatedAt: serverTimestamp(),
+          isManualTime: isTimeSpoofed || todayAttendance.isManualTime
         };
         if (action === 'out') {
           updates.outTime = timeStr;

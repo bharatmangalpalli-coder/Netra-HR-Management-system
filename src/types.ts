@@ -42,6 +42,9 @@ export interface Attendance {
   lunchInSelfieUrl?: string;
   status: 'present' | 'absent' | 'half-day' | 'late';
   totalHours?: number;
+  markedAt: any;
+  isManualTime?: boolean;
+  clientDrift?: number;
   permissionUsed?: boolean;
 }
 

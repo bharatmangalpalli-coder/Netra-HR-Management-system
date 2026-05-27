@@ -22,13 +22,31 @@ export default function Logo({ className = '', size = 'md' }: LogoProps) {
 
   const fetchCustomLogo = async () => {
     if (!db) return;
+    
+    // Load from cache first for instantaneous feel and offline/quota safety
+    const cachedLogo = localStorage.getItem('cached_logo_url');
+    if (cachedLogo) {
+      setCustomLogoUrl(cachedLogo);
+    }
+
     try {
       const settingsDoc = await getDoc(doc(db, 'settings', 'branding'));
       if (settingsDoc.exists()) {
-        setCustomLogoUrl(settingsDoc.data().logoUrl || null);
+        const logoUrl = settingsDoc.data().logoUrl || null;
+        setCustomLogoUrl(logoUrl);
+        if (logoUrl) {
+          localStorage.setItem('cached_logo_url', logoUrl);
+        } else {
+          localStorage.removeItem('cached_logo_url');
+        }
       }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.GET, 'settings/branding');
+    } catch (error: any) {
+      console.warn('Could not fetch custom logo from Firestore (using cache/default):', error);
+      const isQuotaError = error.message?.includes('Quota limit exceeded') || error.code === 'resource-exhausted';
+      // Suppress handleFirestoreError for regular network/quota errors for logo loading
+      if (!isQuotaError && error.code !== 'permission-denied') {
+        handleFirestoreError(error, OperationType.GET, 'settings/branding');
+      }
     }
   };
 

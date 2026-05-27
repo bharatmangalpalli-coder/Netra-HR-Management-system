@@ -55,9 +55,17 @@ service cloud.firestore {
     }
 
     // Attendance collection
+    function isValidAttendance(data) {
+      return data.employeeId is string && 
+             data.date is string && 
+             data.markedAt == request.time;
+    }
+
     match /attendance/{attendanceId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isEmployee(incoming().employeeId) || isAdmin());
+      allow create: if isSignedIn() && 
+                   (isEmployee(incoming().employeeId) || isAdmin()) &&
+                   isValidAttendance(incoming());
       allow update: if isAdmin() || (
         (isOwnerOfDoc(existing()) || isEmployee(existing().employeeId)) && 
         incoming().diff(existing()).affectedKeys().hasOnly([
@@ -65,8 +73,9 @@ service cloud.firestore {
           'lunchOutTime', 'lunchOutSelfieUrl', 
           'lunchInTime', 'lunchInSelfieUrl', 
           'status', 'totalHours', 'checkOut',
-          'userId'
-        ])
+          'userId', 'updatedAt', 'isManualTime'
+        ]) &&
+        incoming().updatedAt == request.time
       );
       allow delete: if isAdmin();
     }

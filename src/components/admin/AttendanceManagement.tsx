@@ -13,13 +13,14 @@ import {
   X,
   Trash2
 } from 'lucide-react';
-import { collection, getDocs, query, where, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Attendance } from '../../types';
 import { getTodayDate } from '../../lib/utils';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
 import EmployeeAttendanceCalendar from './EmployeeAttendanceCalendar';
+import EditAttendanceModal from './EditAttendanceModal';
 
 export default function AttendanceManagement() {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -28,7 +29,9 @@ export default function AttendanceManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingRecord, setEditingRecord] = useState<Attendance | null>(null);
   const [selectedEmployeeForCalendar, setSelectedEmployeeForCalendar] = useState<{id: string, name: string} | null>(null);
 
   useEffect(() => {
@@ -94,6 +97,26 @@ export default function AttendanceManagement() {
   const confirmDelete = (id: string) => {
     setDeletingId(id);
     setIsDeleteModalOpen(true);
+  };
+
+  const handleEdit = (record: Attendance) => {
+    setEditingRecord(record);
+    setIsEditModalOpen(true);
+  };
+
+  const onUpdateAttendance = async (id: string, updates: Partial<Attendance>) => {
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'attendance', id), updates);
+      toast.success('Attendance updated successfully');
+      setIsEditModalOpen(false);
+      setEditingRecord(null);
+      fetchAttendance();
+    } catch (error) {
+      toast.error('Failed to update record');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredAttendance = attendance.filter(item => 
@@ -339,6 +362,13 @@ export default function AttendanceManagement() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
+                          onClick={() => handleEdit(item)}
+                          className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                          title="Edit record"
+                        >
+                          <Clock className="w-4 h-4" />
+                        </button>
+                        <button 
                           onClick={() => setSelectedEmployeeForCalendar({ id: item.employeeId, name: item.employeeName })}
                           className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
                           title="View Full Month Calendar"
@@ -442,6 +472,13 @@ export default function AttendanceManagement() {
                       </button>
                     )}
                     <button 
+                      onClick={() => handleEdit(item)}
+                      className="flex items-center gap-1 text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded-lg"
+                    >
+                      <Clock className="w-3 h-3" />
+                      Edit
+                    </button>
+                    <button 
                       onClick={() => setSelectedEmployeeForCalendar({ id: item.employeeId, name: item.employeeName })}
                       className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded-lg"
                     >
@@ -530,6 +567,19 @@ export default function AttendanceManagement() {
             employeeId={selectedEmployeeForCalendar.id}
             employeeName={selectedEmployeeForCalendar.name}
             onClose={() => setSelectedEmployeeForCalendar(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isEditModalOpen && editingRecord && (
+          <EditAttendanceModal 
+            record={editingRecord}
+            onClose={() => {
+              setIsEditModalOpen(false);
+              setEditingRecord(null);
+            }}
+            onSave={(updates) => onUpdateAttendance(editingRecord.id, updates)}
           />
         )}
       </AnimatePresence>
