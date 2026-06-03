@@ -35,19 +35,46 @@ export default function HomeSection({ employee, onNavigate }: Props) {
 
   useEffect(() => {
     const fetchData = async () => {
+      const empId = employee.employeeId || employee.id;
+      const today = getTodayDate();
+      const cacheKey = `emp_home_cache_${empId}`;
+
+      // Initialize from local storage cache for instant rendering and resilient offline fallback
+      const cachedData = localStorage.getItem(cacheKey);
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          if (parsed.todayAttendance) {
+            setTodayAttendance(parsed.todayAttendance);
+          }
+          if (parsed.pendingTasks !== undefined) {
+            setPendingTasks(parsed.pendingTasks);
+          }
+          if (parsed.monthlyLeaveStats) {
+            setMonthlyLeaveStats(parsed.monthlyLeaveStats);
+          }
+          if (parsed.leaveStatus) {
+            setLeaveStatus(parsed.leaveStatus);
+          }
+          if (parsed.stats) {
+            setStats(parsed.stats);
+          }
+        } catch (e) {
+          console.warn("Could not parse cached employee home data");
+        }
+      }
+
       try {
-        const empId = employee.employeeId || employee.id;
-        const today = getTodayDate();
-        
-        // ... existing attendance and task fetching ...
         const attSnap = await getDocs(query(
           collection(db, 'attendance'), 
           where('employeeId', '==', empId),
           where('date', '==', today),
           limit(1)
         ));
+        let fetchedTodayAttendance: Attendance | null = null;
         if (!attSnap.empty) {
-          setTodayAttendance({ id: attSnap.docs[0].id, ...attSnap.docs[0].data() } as Attendance);
+          fetchedTodayAttendance = { id: attSnap.docs[0].id, ...attSnap.docs[0].data() } as Attendance;
+          setTodayAttendance(fetchedTodayAttendance);
         }
 
         const tasksSnap = await getDocs(query(
@@ -55,7 +82,8 @@ export default function HomeSection({ employee, onNavigate }: Props) {
           where('assignedTo', '==', empId),
           where('status', '==', 'pending')
         ));
-        setPendingTasks(tasksSnap.size);
+        const fetchedPendingTasks = tasksSnap.size;
+        setPendingTasks(fetchedPendingTasks);
 
         // Leave stats for current month
         const now = new Date();
@@ -73,18 +101,22 @@ export default function HomeSection({ employee, onNavigate }: Props) {
         ));
         
         const usedLeaves = leaveSnap.size;
-        setMonthlyLeaveStats({ used: usedLeaves, available: Math.max(0, 1 - usedLeaves) });
+        const fetchedLeaveStats = { used: usedLeaves, available: Math.max(0, 1 - usedLeaves) };
+        setMonthlyLeaveStats(fetchedLeaveStats);
 
         // Latest leave status for UI
         const allLeavesSnap = await getDocs(query(
           collection(db, 'leaves'),
           where('employeeId', '==', empId)
         ));
+        let fetchedLeaveStatus: string | null = null;
+        let sortedLeaves: any[] = [];
         if (!allLeavesSnap.empty) {
-          const sortedLeaves = allLeavesSnap.docs
+          sortedLeaves = allLeavesSnap.docs
             .map(d => d.data())
             .sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
-          setLeaveStatus(sortedLeaves[0].status);
+          fetchedLeaveStatus = sortedLeaves[0].status;
+          setLeaveStatus(fetchedLeaveStatus);
         }
 
         // Attendance stats
@@ -117,14 +149,28 @@ export default function HomeSection({ employee, onNavigate }: Props) {
           latestSalary = sortedSalaries[0].netSalary ?? employee.monthlySalary ?? 0;
         }
 
-        setStats({
+        const fetchedStats = {
           presentDays: present,
           absentDays: 0,
           salary: latestSalary
-        });
+        };
+        setStats(fetchedStats);
 
-      } catch (error) {
+        // Persist successful fetch in local cache
+        localStorage.setItem(cacheKey, JSON.stringify({
+          todayAttendance: fetchedTodayAttendance,
+          pendingTasks: fetchedPendingTasks,
+          monthlyLeaveStats: fetchedLeaveStats,
+          leaveStatus: fetchedLeaveStatus,
+          stats: fetchedStats
+        }));
+
+      } catch (error: any) {
         console.error("Error fetching employee home data:", error);
+        const isQuota = error.message?.includes('Quota limit exceeded') || error.code === 'resource-exhausted' || error.message?.includes('quota metric');
+        if (isQuota) {
+          window.dispatchEvent(new Event('firestore-quota-exceeded'));
+        }
       }
     };
 

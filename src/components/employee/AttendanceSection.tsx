@@ -113,14 +113,17 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         }, 150);
       }
     } catch (err: any) {
-      console.error('Camera Error:', err);
-      let message = 'Camera access denied. Please allow permissions and refresh.';
-      if (err.name === 'NotFoundError' || err.message?.includes('Found')) message = 'No camera found';
-      if (err.name === 'NotAllowedError' || err.message?.includes('Permission')) message = 'Camera permission denied';
-      if (err.name === 'NotReadableError' || err.message?.includes('readable')) message = 'Camera is already in use';
+      console.warn('Camera Error:', err);
+      let message = 'Camera Error: Requested device not found.';
+      if (err.name === 'NotFoundError' || err.message?.includes('Found') || err.message?.includes('device not found')) {
+        message = 'No camera device detected. Please connect a camera and try again.';
+      } else if (err.name === 'NotAllowedError' || err.message?.includes('Permission')) {
+        message = 'Camera permission was denied. Please allow camera permissions and try again.';
+      } else if (err.name === 'NotReadableError' || err.message?.includes('readable')) {
+        message = 'Camera is already in use by another application.';
+      }
       
       toast.error(message);
-      setShowCamera(false);
     }
   };
 
@@ -144,7 +147,7 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         stopCamera();
       }
     } else {
-      toast.error('Camera not ready. Please wait a moment.');
+      toast.error('Camera not ready yet. Try again in a moment.');
       if (!capturedImage) startCamera();
     }
   };
@@ -156,10 +159,20 @@ export default function AttendanceSection({ employee, onBack }: Props) {
   };
 
   const fetchTodayAttendance = async () => {
+    const today = getTodayDate();
+    const empId = employee.employeeId || employee.id;
+    const cacheKey = `today_attendance_${empId}_${today}`;
+    
+    // Quick load from local storage cache first to guarantee responsiveness and failover
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        setTodayAttendance(JSON.parse(cached));
+      } catch (e) {}
+    }
+
     setLoading(true);
     try {
-      const today = getTodayDate();
-      const empId = employee.employeeId || employee.id;
       const q = query(
         collection(db, 'attendance'), 
         where('employeeId', '==', empId),
@@ -168,18 +181,37 @@ export default function AttendanceSection({ employee, onBack }: Props) {
       );
       const snap = await getDocs(q);
       if (!snap.empty) {
-        setTodayAttendance({ id: snap.docs[0].id, ...snap.docs[0].data() } as Attendance);
+        const docRecord = { id: snap.docs[0].id, ...snap.docs[0].data() } as Attendance;
+        setTodayAttendance(docRecord);
+        localStorage.setItem(cacheKey, JSON.stringify(docRecord));
+      } else {
+        setTodayAttendance(null);
+        localStorage.removeItem(cacheKey);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching today attendance:", error);
+      const isQuota = error.message?.includes('Quota limit exceeded') || error.code === 'resource-exhausted' || error.message?.includes('quota metric');
+      if (isQuota) {
+        window.dispatchEvent(new Event('firestore-quota-exceeded'));
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const fetchHistory = async () => {
+    const empId = employee.employeeId || employee.id;
+    const historyKey = `attendance_history_${empId}`;
+    
+    // Quick load from cache first
+    const cachedHistory = localStorage.getItem(historyKey);
+    if (cachedHistory) {
+      try {
+        setHistory(JSON.parse(cachedHistory));
+      } catch (e) {}
+    }
+
     try {
-      const empId = employee.employeeId || employee.id;
       const q = query(
         collection(db, 'attendance'), 
         where('employeeId', '==', empId)
@@ -190,8 +222,17 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 10);
       setHistory(list);
-    } catch (error) {
+      localStorage.setItem(historyKey, JSON.stringify(list));
+    } catch (error: any) {
       console.error("Error fetching attendance history:", error);
+      const isQuota = error.message?.includes('Quota limit exceeded') || error.code === 'resource-exhausted' || error.message?.includes('quota metric');
+      if (isQuota) {
+        window.dispatchEvent(new Event('firestore-quota-exceeded'));
+        // Fallback: If history list is empty but we have cached today's attendance, use it to populate
+        if (!cachedHistory && todayAttendance) {
+          setHistory([todayAttendance]);
+        }
+      }
     }
   };
 
@@ -232,6 +273,8 @@ export default function AttendanceSection({ employee, onBack }: Props) {
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
       const empId = employee.employeeId || employee.id;
+      const today = getTodayDate();
+      const cacheKey = `today_attendance_${empId}_${today}`;
 
       if (action === 'in') {
         const shiftStart = employee.shiftStart || '09:00';
@@ -266,10 +309,11 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         }
 
         const newAttendance = {
+          id: `temp_${Date.now()}`,
           employeeId: empId,
           userId: auth?.currentUser?.uid,
           employeeName: employee.name,
-          date: getTodayDate(),
+          date: today,
           inTime: timeStr,
           outTime: null,
           lunchOutTime: null,
@@ -278,19 +322,40 @@ export default function AttendanceSection({ employee, onBack }: Props) {
           selfieUrl: selfie,
           status,
           totalHours: 0,
-          markedAt: serverTimestamp(),
+          markedAt: now.toISOString(),
           clientDrift: drift,
           isManualTime: isTimeSpoofed
         };
 
-        await addDoc(collection(db, 'attendance'), newAttendance);
+        // Cache it immediately so UX updates without a single millisecond lag
+        localStorage.setItem(cacheKey, JSON.stringify(newAttendance));
+        setTodayAttendance(newAttendance as any);
+
+        try {
+          const docRef = await addDoc(collection(db, 'attendance'), {
+            ...newAttendance,
+            markedAt: serverTimestamp()
+          });
+          newAttendance.id = docRef.id;
+          localStorage.setItem(cacheKey, JSON.stringify(newAttendance));
+          setTodayAttendance(newAttendance as any);
+        } catch (dbErr: any) {
+          console.warn("Could not save to remote Firestore index (relying on cache):", dbErr);
+          const isQuota = dbErr.message?.includes('Quota limit exceeded') || dbErr.code === 'resource-exhausted' || dbErr.message?.includes('quota metric');
+          if (isQuota) {
+            window.dispatchEvent(new Event('firestore-quota-exceeded'));
+          } else {
+            throw dbErr;
+          }
+        }
+
         toast.success(`Clocked in successfully as ${status.replace('-', ' ')}`);
       } else {
         if (!todayAttendance) return;
 
         const updates: any = {
           userId: auth?.currentUser?.uid,
-          updatedAt: serverTimestamp(),
+          updatedAt: now.toISOString(),
           isManualTime: isTimeSpoofed || todayAttendance.isManualTime
         };
         if (action === 'out') {
@@ -309,12 +374,9 @@ export default function AttendanceSection({ employee, onBack }: Props) {
             updates.totalHours = parseFloat((totalMinutes / 60).toFixed(2));
 
             // If total hours >= 9, consider it a full day (present)
-            // Even if they were marked "late" on check-in, completing 9 hours compensates.
             if (totalMinutes >= 540) { // 9 hours * 60 minutes
               updates.status = 'present';
             } else if (totalMinutes < 540 && totalMinutes >= 240) {
-              // Usually if it's less than 9 but more than 4, it's half day.
-              // We'll keep the existing status unless it should be upgraded to present.
               if (todayAttendance.status !== 'late') {
                 updates.status = 'half-day';
               }
@@ -332,7 +394,30 @@ export default function AttendanceSection({ employee, onBack }: Props) {
           updates.lunchInSelfieUrl = selfie;
         }
 
-        await updateDoc(doc(db, 'attendance', todayAttendance.id), updates);
+        const updatedAttendanceRecord = {
+          ...todayAttendance,
+          ...updates
+        };
+
+        // Cache it immediately so UX reflects states instantly (even if remote is quota filled)
+        localStorage.setItem(cacheKey, JSON.stringify(updatedAttendanceRecord));
+        setTodayAttendance(updatedAttendanceRecord);
+
+        try {
+          await updateDoc(doc(db, 'attendance', todayAttendance.id), {
+            ...updates,
+            updatedAt: serverTimestamp()
+          });
+        } catch (dbErr: any) {
+          console.warn("Could not sync remote update to Firestore (using local cached state):", dbErr);
+          const isQuota = dbErr.message?.includes('Quota limit exceeded') || dbErr.code === 'resource-exhausted' || dbErr.message?.includes('quota metric');
+          if (isQuota) {
+            window.dispatchEvent(new Event('firestore-quota-exceeded'));
+          } else {
+            throw dbErr;
+          }
+        }
+
         toast.success(`${action.replace('-', ' ')} recorded`);
       }
 
@@ -342,8 +427,14 @@ export default function AttendanceSection({ employee, onBack }: Props) {
       setPendingAction(null);
       setCapturedImage(null);
     } catch (error: any) {
+      console.error("Attendance update error occurred:", error);
       const path = todayAttendance ? `attendance/${todayAttendance.id}` : 'attendance';
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      const isQuota = error.message?.includes('Quota limit exceeded') || error.code === 'resource-exhausted' || error.message?.includes('quota metric');
+      if (isQuota) {
+        window.dispatchEvent(new Event('firestore-quota-exceeded'));
+      } else {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
     } finally {
       setLoading(false);
     }
@@ -563,7 +654,7 @@ export default function AttendanceSection({ employee, onBack }: Props) {
                     <button 
                       onClick={() => pendingAction && updateAttendance(pendingAction, capturedImage)}
                       disabled={loading}
-                      className="flex-1 btn bg-emerald-600 text-white h-12 flex items-center justify-center gap-2"
+                      className="flex-1 btn bg-emerald-600 text-white h-12 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 hover:bg-emerald-700 transition-all"
                     >
                       {loading ? 'Uploading...' : (
                         <>
