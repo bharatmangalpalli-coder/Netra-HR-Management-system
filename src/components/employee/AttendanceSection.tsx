@@ -14,8 +14,9 @@ import {
   Check
 } from 'lucide-react';
 import { Employee, Attendance } from '../../types';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, limit, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
+import { collection, query, where, getDocs, getDoc, addDoc, updateDoc, doc, limit, orderBy, serverTimestamp } from 'firebase/firestore';
+import { db, auth, storage, handleFirestoreError, OperationType } from '../../lib/firebase';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
 // Helper to check for manual time adjustment
 const checkTimeDrift = async (): Promise<number> => {
@@ -74,7 +75,35 @@ export default function AttendanceSection({ employee, onBack }: Props) {
     }
   }, [showCamera, capturedImage]);
 
+  const uploadWithRetry = async (
+    storageRef: any,
+    selfieDataUrl: string,
+    maxRetries = 3,
+    delayMs = 1500
+  ): Promise<string> => {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+      try {
+        console.log(`[Storage Upload] Attempt ${attempt + 1}/${maxRetries} starting...`);
+        const snapshot = await uploadString(storageRef, selfieDataUrl, 'data_url');
+        console.log(`[Storage Upload] Attempt ${attempt + 1} succeeded! Getting download URL...`);
+        const downloadUrl = await getDownloadURL(snapshot.ref);
+        console.log(`[Storage Upload] Download URL acquired: ${downloadUrl}`);
+        return downloadUrl;
+      } catch (err) {
+        attempt++;
+        console.error(`[Error] [Storage Upload] Attempt ${attempt} failed:`, err);
+        if (attempt >= maxRetries) {
+          throw new Error(`Failed to upload selfie after ${maxRetries} attempts. Details: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    throw new Error('Upload failed');
+  };
+
   const startCamera = async (isActive?: { current: boolean }) => {
+    console.log("[Camera] Instantly opening camera stream...");
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API not supported in this browser');
@@ -82,38 +111,50 @@ export default function AttendanceSection({ employee, onBack }: Props) {
 
       let stream: MediaStream;
       try {
-        // Try with front camera first
+        console.log("[Camera] Requesting front camera with ideal resolution: facingMode: 'user', width: 640");
         stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user' },
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
           audio: false 
         });
       } catch (firstErr: any) {
-        console.warn('Initial camera access failed, trying fallback:', firstErr);
-        // Fallback: Try any available camera if 'user' facing mode fails
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true,
-          audio: false 
-        });
+        console.warn('[Camera] High-res front camera access failed, trying standard front camera:', firstErr);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'user' },
+            audio: false 
+          });
+        } catch (secondErr: any) {
+          console.warn('[Camera] Standard front camera access failed, trying any available video stream:', secondErr);
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: true,
+            audio: false 
+          });
+        }
       }
 
       if (isActive && !isActive.current) {
+        console.log("[Camera] Setup aborted because component state changed/inactive.");
         stream.getTracks().forEach(track => track.stop());
         return;
       }
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        console.log("[Camera] Instantly hooked stream up to video element.");
       } else {
+        console.log("[Camera] video element not loaded in ref, retrying on delay.");
         setTimeout(() => {
           if (videoRef.current && (!isActive || isActive.current)) {
             videoRef.current.srcObject = stream;
+            console.log("[Camera] Hooked stream up to video element after delay.");
           } else {
+            console.log("[Camera] Video element ref still missing on delay, stopping stream.");
             stream.getTracks().forEach(track => track.stop());
           }
         }, 150);
       }
     } catch (err: any) {
-      console.error('Camera Error:', err);
+      console.error('[Error] [Camera] Camera opening failed:', err);
       let message = 'Camera access denied. Please allow permissions and refresh.';
       if (err.name === 'NotFoundError' || err.message?.includes('Found')) message = 'No camera found';
       if (err.name === 'NotAllowedError' || err.message?.includes('Permission')) message = 'Camera permission denied';
@@ -125,25 +166,47 @@ export default function AttendanceSection({ employee, onBack }: Props) {
   };
 
   const stopCamera = () => {
+    console.log("[Camera] Stopping camera streams.");
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => {
+        track.stop();
+        console.log(`[Camera] Stream track stopped: ${track.label}`);
+      });
+      videoRef.current.srcObject = null;
     }
   };
 
   const capturePhoto = () => {
     if (videoRef.current && videoRef.current.videoWidth > 0) {
+      console.log("[Camera] Capturing live selfie directly from the camera stream...");
       const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
+      
+      const maxDim = 800;
+      let width = videoRef.current.videoWidth;
+      let height = videoRef.current.videoHeight;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0);
+        ctx.drawImage(videoRef.current, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        console.log(`[Camera] Captured image dimensions: ${width}x${height}. Compressed successfully.`);
         setCapturedImage(dataUrl);
         stopCamera();
       }
     } else {
+      console.warn("[Camera] Camera element is not ready for capture yet.");
       toast.error('Camera not ready. Please wait a moment.');
       if (!capturedImage) startCamera();
     }
@@ -218,11 +281,85 @@ export default function AttendanceSection({ employee, onBack }: Props) {
   };
 
   const updateAttendance = async (action: 'in' | 'out', selfie: string) => {
+    if (!auth?.currentUser) {
+      console.error("[Error] [Auth] Attendance submission rejected. Employee not logged in.");
+      toast.error("Please login first to submit attendance.");
+      return;
+    }
+
+    if (!selfie) {
+      console.error("[Error] [Validation] Attendance submission rejected. Missing selfie.");
+      toast.error("Selfie is required to submit attendance.");
+      return;
+    }
+
     setLoading(true);
     try {
-      // Check for manual time setting
+      const empId = employee.employeeId || employee.id;
+      console.log(`[Firestore Save] Validating employee login & check duplicate. Employee Id: ${empId}, Action: ${action}`);
+
+      const today = getTodayDate();
+      if (action === 'in') {
+        const q = query(
+          collection(db, 'attendance'), 
+          where('employeeId', '==', empId),
+          where('date', '==', today),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          console.error("[Error] [Duplicate] Check-in already exists for today!");
+          toast.error("You have already checked in for today!");
+          fetchTodayAttendance();
+          fetchHistory();
+          setShowCamera(false);
+          setPendingAction(null);
+          setCapturedImage(null);
+          return;
+        }
+      } else {
+        if (!todayAttendance?.id) {
+          console.error("[Error] [Validation] No existing check-in to clock out!");
+          toast.error("No active check-in record found to clock out!");
+          return;
+        }
+        
+        const currentSnap = await getDocs(query(
+          collection(db, 'attendance'), 
+          where('employeeId', '==', empId), 
+          where('date', '==', today), 
+          limit(1)
+        ));
+        if (!currentSnap.empty) {
+          const recordData = currentSnap.docs[0].data();
+          if (recordData.outTime) {
+            console.error("[Error] [Duplicate] Check-out already exists for today!");
+            toast.error("You have already clocked out for today!");
+            fetchTodayAttendance();
+            fetchHistory();
+            setShowCamera(false);
+            setPendingAction(null);
+            setCapturedImage(null);
+            return;
+          }
+        }
+      }
+
+      if (!storage) {
+        throw new Error('Firebase Storage is not initialized or configured on this applet.');
+      }
+
+      const timestamp = Date.now();
+      const filePath = `attendance/selfies/${empId}_${today}_${action}_${timestamp}.jpg`;
+      const storageRef = ref(storage, filePath);
+
+      toast.loading("Uploading selfie...", { id: "upload-toast" });
+      console.log(`[Storage Upload] Starting upload to ${filePath}`);
+      const finalSelfieUrl = await uploadWithRetry(storageRef, selfie);
+      toast.dismiss("upload-toast");
+
       const drift = await checkTimeDrift();
-      const isTimeSpoofed = drift > 5 * 60 * 1000; // 5 minutes threshold
+      const isTimeSpoofed = drift > 5 * 60 * 1000;
       
       if (isTimeSpoofed) {
         console.warn("Time spoofing detected. Drift:", drift);
@@ -231,7 +368,6 @@ export default function AttendanceSection({ employee, onBack }: Props) {
 
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-      const empId = employee.employeeId || employee.id;
 
       if (action === 'in') {
         const shiftStart = employee.shiftStart || '09:00';
@@ -244,13 +380,11 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         if (employee.isFlexibleShift) {
           status = 'present';
         } else {
-          // No grace period: anytime after shiftStart is late.
           if (now > shiftStartDate) {
             status = 'late';
           }
         }
 
-        // Get Location
         let location = { lat: 0, lng: 0 };
         try {
           const position = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -269,13 +403,13 @@ export default function AttendanceSection({ employee, onBack }: Props) {
           employeeId: empId,
           userId: auth?.currentUser?.uid,
           employeeName: employee.name,
-          date: getTodayDate(),
+          date: today,
           inTime: timeStr,
           outTime: null,
           lunchOutTime: null,
           lunchInTime: null,
           location,
-          selfieUrl: selfie,
+          selfieUrl: finalSelfieUrl,
           status,
           totalHours: 0,
           markedAt: serverTimestamp(),
@@ -283,7 +417,9 @@ export default function AttendanceSection({ employee, onBack }: Props) {
           isManualTime: isTimeSpoofed
         };
 
+        console.log(`[Firestore Save] Adding new check-in attendance:`, newAttendance);
         await addDoc(collection(db, 'attendance'), newAttendance);
+        console.log(`[Firestore Save] Saved check-in successfully!`);
         toast.success(`Clocked in successfully as ${status.replace('-', ' ')}`);
       } else {
         if (!todayAttendance) return;
@@ -291,41 +427,36 @@ export default function AttendanceSection({ employee, onBack }: Props) {
         const updates: any = {
           userId: auth?.currentUser?.uid,
           updatedAt: serverTimestamp(),
-          isManualTime: isTimeSpoofed || todayAttendance.isManualTime
+          isManualTime: isTimeSpoofed || todayAttendance.isManualTime,
+          outTime: timeStr,
+          outSelfieUrl: finalSelfieUrl
         };
-        if (action === 'out') {
-          updates.outTime = timeStr;
-          updates.outSelfieUrl = selfie;
 
-          // Calculate total hours excluding lunch
-          if (todayAttendance.inTime) {
-            const totalMinutes = calculateWorkingMinutes(
-              todayAttendance.inTime,
-              timeStr,
-              todayAttendance.lunchOutTime,
-              todayAttendance.lunchInTime
-            );
-            
-            updates.totalHours = parseFloat((totalMinutes / 60).toFixed(2));
+        if (todayAttendance.inTime) {
+          const totalMinutes = calculateWorkingMinutes(
+            todayAttendance.inTime,
+            timeStr,
+            todayAttendance.lunchOutTime,
+            todayAttendance.lunchInTime
+          );
+          
+          updates.totalHours = parseFloat((totalMinutes / 60).toFixed(2));
 
-            // If total hours >= 9, consider it a full day (present)
-            // Even if they were marked "late" on check-in, completing 9 hours compensates.
-            if (totalMinutes >= 540) { // 9 hours * 60 minutes
-              updates.status = 'present';
-            } else if (totalMinutes < 540 && totalMinutes >= 240) {
-              // Usually if it's less than 9 but more than 4, it's half day.
-              // We'll keep the existing status unless it should be upgraded to present.
-              if (todayAttendance.status !== 'late') {
-                updates.status = 'half-day';
-              }
-            } else if (totalMinutes < 240) {
-               updates.status = 'absent';
+          if (totalMinutes >= 540) {
+            updates.status = 'present';
+          } else if (totalMinutes < 540 && totalMinutes >= 240) {
+            if (todayAttendance.status !== 'late') {
+              updates.status = 'half-day';
             }
+          } else if (totalMinutes < 240) {
+             updates.status = 'absent';
           }
         }
 
+        console.log(`[Firestore Save] Updating checkout attendance doc id: ${todayAttendance.id} with updates:`, updates);
         await updateDoc(doc(db, 'attendance', todayAttendance.id), updates);
-        toast.success(`${action.replace('-', ' ')} recorded`);
+        console.log(`[Firestore Save] Updated check-out successfully!`);
+        toast.success(`Clock out recorded`);
       }
 
       fetchTodayAttendance();
@@ -334,6 +465,8 @@ export default function AttendanceSection({ employee, onBack }: Props) {
       setPendingAction(null);
       setCapturedImage(null);
     } catch (error: any) {
+      console.error("[Error] [Firestore Save] Failed to submit attendance:", error);
+      toast.dismiss("upload-toast");
       const path = todayAttendance ? `attendance/${todayAttendance.id}` : 'attendance';
       handleFirestoreError(error, OperationType.UPDATE, path);
     } finally {
