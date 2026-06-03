@@ -18,21 +18,6 @@ export default function Settings() {
   const fetchSettings = async () => {
     if (!db) return;
     setLoading(true);
-
-    // Read from cache first to load quickly and offer a smooth offline fallback
-    const cachedBranding = localStorage.getItem('cached_branding_settings');
-    if (cachedBranding) {
-      try {
-        const parsed = JSON.parse(cachedBranding);
-        setCompanyName(parsed.companyName || 'Netra Consultancy & E-Services');
-        setTagline(parsed.tagline || 'Vision for Your Success');
-      } catch (e) {}
-    }
-    const cachedLogo = localStorage.getItem('cached_logo_url');
-    if (cachedLogo) {
-      setLogoUrl(cachedLogo);
-    }
-
     try {
       const settingsDoc = await getDoc(doc(db, 'settings', 'branding'));
       if (settingsDoc.exists()) {
@@ -40,19 +25,9 @@ export default function Settings() {
         setLogoUrl(data.logoUrl || null);
         setCompanyName(data.companyName || 'Netra Consultancy & E-Services');
         setTagline(data.tagline || 'Vision for Your Success');
-
-        if (data.logoUrl) {
-          localStorage.setItem('cached_logo_url', data.logoUrl);
-        } else {
-          localStorage.removeItem('cached_logo_url');
-        }
-        localStorage.setItem('cached_branding_settings', JSON.stringify({
-          companyName: data.companyName,
-          tagline: data.tagline
-        }));
       }
     } catch (error) {
-      console.error("Error fetching settings from Firestore:", error);
+      console.error("Error fetching settings:", error);
     } finally {
       setLoading(false);
     }
@@ -82,18 +57,6 @@ export default function Settings() {
         tagline,
         updatedAt: new Date().toISOString()
       }, { merge: true });
-
-      // Keep local cache perfectly synchronized
-      if (logoUrl) {
-        localStorage.setItem('cached_logo_url', logoUrl);
-      } else {
-        localStorage.removeItem('cached_logo_url');
-      }
-      localStorage.setItem('cached_branding_settings', JSON.stringify({
-        companyName,
-        tagline
-      }));
-
       toast.success("Branding settings saved successfully");
       // Trigger a reload of the logo throughout the app
       window.dispatchEvent(new Event('logoUpdated'));

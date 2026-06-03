@@ -70,8 +70,6 @@ service cloud.firestore {
         (isOwnerOfDoc(existing()) || isEmployee(existing().employeeId)) && 
         incoming().diff(existing()).affectedKeys().hasOnly([
           'outTime', 'outSelfieUrl', 
-          'lunchOutTime', 'lunchOutSelfieUrl', 
-          'lunchInTime', 'lunchInSelfieUrl', 
           'status', 'totalHours', 'checkOut',
           'userId', 'updatedAt', 'isManualTime'
         ]) &&
